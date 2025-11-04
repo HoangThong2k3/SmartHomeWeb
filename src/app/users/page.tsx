@@ -49,12 +49,12 @@ export default function UsersPage() {
 
   const handleUpdateUser = async (id: string, userData: any) => {
     try {
-      const updatedUser = await apiService.updateUser(id, {
+      await apiService.updateUser(id, {
         name: userData.name,
         email: userData.email,
         role: userData.role,
       });
-      setUsers(users.map(u => u.id === id ? updatedUser : u));
+      await fetchUsers(); // Refresh list to get updated user data
       setEditingUser(null);
     } catch (err: any) {
       setError(err.message || "Failed to update user");
