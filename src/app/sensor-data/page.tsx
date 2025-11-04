@@ -153,7 +153,9 @@ export default function SensorDataPage() {
 
       // Build payload
       const payload: CreateSensorDataRequest & { timeStamp?: string; valueRaw?: any } = {
-        deviceId: parseInt(sensorDataForm.deviceId),
+        deviceId: typeof sensorDataForm.deviceId === 'string' 
+          ? parseInt(sensorDataForm.deviceId) 
+          : sensorDataForm.deviceId,
         value: valueString,
         unit: sensorDataForm.unit || undefined,
         timeStamp: sensorDataForm.timeStamp

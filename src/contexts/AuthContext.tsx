@@ -154,9 +154,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.error("Login failed:", error);
 
       // Fallback for testing when API is down
+      const errorMessage = error instanceof Error ? error.message : String(error);
       if (
-        error.message.includes("CORS") ||
-        error.message.includes("Failed to fetch")
+        errorMessage.includes("CORS") ||
+        errorMessage.includes("Failed to fetch")
       ) {
         console.log("API is down, using fallback for testing...");
         const fallbackUser: User = {
@@ -250,9 +251,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.error("Registration failed:", error);
 
       // Fallback for testing when API is down
+      const errorMessage = error instanceof Error ? error.message : String(error);
       if (
-        error.message.includes("CORS") ||
-        error.message.includes("Failed to fetch")
+        errorMessage.includes("CORS") ||
+        errorMessage.includes("Failed to fetch")
       ) {
         console.log("API is down, using fallback for testing...");
         const fallbackUser: User = {

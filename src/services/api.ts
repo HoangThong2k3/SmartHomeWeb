@@ -1238,7 +1238,9 @@ class ApiService {
     console.log("[API] createSensorData - input:", sensorData);
     try {
       const payload: any = {
-        deviceId: parseInt(sensorData.deviceId),
+        deviceId: typeof sensorData.deviceId === 'string' 
+          ? parseInt(sensorData.deviceId) 
+          : sensorData.deviceId,
       };
 
       // Handle value - can be string (JSON) or object that needs stringification
