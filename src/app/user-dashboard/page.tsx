@@ -87,7 +87,7 @@ export default function UserDashboard() {
             Welcome back, {user?.name || "User"}!
           </h1>
           <p className="text-gray-600">
-            Here's your smart home overview and quick controls.
+            Here&apos;s your smart home overview and quick controls.
           </p>
         </div>
 

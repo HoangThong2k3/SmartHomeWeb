@@ -5,7 +5,7 @@ import Layout from "@/components/layout/Layout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiService } from "@/services/api";
-import { Device, Home, Room } from "@/types";
+import { Device, Home, Room, CreateSensorDataRequest } from "@/types";
 import { Thermometer, Plus, Eye, Trash2, Calendar, Filter, Edit } from "lucide-react";
 
 export default function SensorDataPage() {
@@ -152,9 +152,10 @@ export default function SensorDataPage() {
       }
 
       // Build payload
-      const payload = {
+      const payload: CreateSensorDataRequest & { timeStamp?: string; valueRaw?: any } = {
         deviceId: parseInt(sensorDataForm.deviceId),
         value: valueString,
+        unit: sensorDataForm.unit || undefined,
         timeStamp: sensorDataForm.timeStamp
           ? new Date(sensorDataForm.timeStamp).toISOString()
           : undefined,

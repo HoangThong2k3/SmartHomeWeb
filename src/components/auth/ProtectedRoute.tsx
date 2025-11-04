@@ -40,7 +40,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
             Access Denied
           </h2>
           <p className="mt-2 text-gray-600">
-            You don't have permission to access this page. Admin privileges required.
+            You don&apos;t have permission to access this page. Admin privileges required.
           </p>
         </div>
       </div>

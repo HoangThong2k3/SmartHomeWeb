@@ -44,7 +44,7 @@ async function handleRequest(request: NextRequest, method: string) {
       method,
       headers,
       // Disable SSL verification for development
-      // @ts-ignore
+      // @ts-expect-error - rejectUnauthorized is a valid option for https agent
       rejectUnauthorized: false,
     };
 

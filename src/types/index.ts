@@ -190,9 +190,9 @@ export interface SensorData {
 }
 
 export interface CreateSensorDataRequest {
-  deviceId: string;
-  value: number;
-  unit: string;
+  deviceId: string | number; // Can be string or number (converted to number in API)
+  value: string | number; // Can be JSON string or number
+  unit?: string; // Optional - backend doesn't require this in request body
 }
 
 export interface SensorDataQuery {
