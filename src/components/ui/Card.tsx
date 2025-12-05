@@ -23,18 +23,16 @@ export default function Card({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+    <div className={`bg-white rounded-lg p-6 transition-shadow duration-300 card-shadow border border-gray-200 shadow-md hover:shadow-xl group`}>
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium text-gray-600">{title}</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
-          {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
+          <p className="text-sm font-semibold text-gray-700 tracking-wide mb-1 uppercase group-hover:text-blue-600">{title}</p>
+          <p className="text-3xl font-black text-gray-900 mt-1 group-hover:text-blue-500 duration-150">{value}</p>
+          {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
         </div>
         {icon && (
-          <div
-            className={`p-3 rounded-full ${colorClasses[color]} bg-opacity-10`}
-          >
-            <div className={`text-${color}-600`}>{icon}</div>
+          <div className={`p-3 rounded-full ${colorClasses[color]} bg-opacity-20 shadow-md group-hover:bg-opacity-40 transition-all`}>
+            <div className={`text-${color}-600 text-2xl`}>{icon}</div>
           </div>
         )}
       </div>
