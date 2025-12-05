@@ -10,9 +10,10 @@ export default function Header() {
   const router = useRouter();
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     setShowUserMenu(false);
+    router.push("/login");
   };
 
   const handleSettings = () => {
