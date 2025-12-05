@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Backend base URL, ưu tiên lấy từ biến môi trường NEXT_PUBLIC_API_URL
+// Ví dụ: NEXT_PUBLIC_API_URL=https://smarthomes-fdbehwcuaaexaggv.eastasia-01.azurewebsites.net/api
 const BACKEND_URL =
-  "https://smarthome-bnauatedb7bucncy.eastasia-01.azurewebsites.net/api";
+  process.env.NEXT_PUBLIC_API_URL ??
+  "https://smarthomes-fdbehwcuaaexaggv.eastasia-01.azurewebsites.net/api";
 
 export async function GET(request: NextRequest) {
   return handleRequest(request, "GET");

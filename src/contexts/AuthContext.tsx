@@ -7,17 +7,22 @@ import React, {
   useEffect,
   ReactNode,
 } from "react";
-import { User, LoginRequest, RegisterRequest } from "@/types";
+import { User, LoginRequest, RegisterRequest, GoogleLoginRequest, GoogleRegisterRequest } from "@/types";
 import { apiService } from "@/services/api";
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
+  refreshToken: string | null;
   isLoading: boolean;
   login: (credentials: LoginRequest) => Promise<void>;
   register: (userData: RegisterRequest) => Promise<void>;
+  loginWithGoogle: (idToken: string) => Promise<void>;
+  registerWithGoogle: (idToken: string, fullName?: string, phoneNumber?: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
+  refreshSession: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -37,11 +42,13 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing token on mount
+    // Check for existing session on mount
     const storedToken = localStorage.getItem("authToken");
+    const storedRefreshToken = localStorage.getItem("refreshToken");
     const storedUser = localStorage.getItem("user");
     let valid = false;
     if (storedToken && storedUser) {
@@ -65,91 +72,137 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         if (valid) {
           setToken(storedToken);
+          if (storedRefreshToken) setRefreshToken(storedRefreshToken);
           setUser(parsedUser);
         } else {
           localStorage.removeItem("authToken");
+          localStorage.removeItem("refreshToken");
           localStorage.removeItem("user");
           setToken(null);
+          setRefreshToken(null);
           setUser(null);
         }
       } catch (error) {
         localStorage.removeItem("authToken");
+        localStorage.removeItem("refreshToken");
         localStorage.removeItem("user");
         setToken(null);
+        setRefreshToken(null);
         setUser(null);
       }
     } else {
       // No valid session
       localStorage.removeItem("authToken");
+      localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
       setToken(null);
+      setRefreshToken(null);
       setUser(null);
     }
     setIsLoading(false);
   }, []);
+
+  const handleAuthSuccess = (raw: any, fallbackEmail?: string, fallbackName?: string) => {
+    const mappedToken: string =
+      raw?.AccessToken ||
+      raw?.token ||
+      raw?.accessToken ||
+      raw?.access_token ||
+      raw?.jwt ||
+      "";
+
+    if (!mappedToken) {
+      console.error("No access token found in response:", raw);
+      throw new Error("No access token received");
+    }
+
+    const mappedRefreshToken: string =
+      raw?.RefreshToken ||
+      raw?.refreshToken ||
+      raw?.refresh_token ||
+      "";
+
+    // Decode JWT to get user info
+    let finalUser: User | null = null;
+    try {
+      // Ưu tiên lấy Role từ API response trước
+      const roleFromResponse = raw?.Role || raw?.role;
+      let finalRole: "admin" | "customer" = "customer";
+
+      if (roleFromResponse) {
+        const roleLower = roleFromResponse.toString().toLowerCase();
+        finalRole =
+          roleLower === "admin" || roleLower === "administrator"
+            ? "admin"
+            : "customer";
+      } else if (mappedToken && mappedToken.split(".").length === 3) {
+        // Fallback: decode từ JWT
+        const payloadBase64 = mappedToken.split(".")[1];
+        const json = JSON.parse(
+          atob(payloadBase64.replace(/-/g, "+").replace(/_/g, "/"))
+        );
+        const roleFromToken = (json.role || json.Role || "CUSTOMER")
+          .toString()
+          .toLowerCase();
+        finalRole =
+          roleFromToken === "administrator" || roleFromToken === "admin"
+            ? "admin"
+            : "customer";
+      }
+
+      let json: any = {};
+      if (mappedToken && mappedToken.split(".").length === 3) {
+        const payloadBase64 = mappedToken.split(".")[1];
+        json = JSON.parse(
+          atob(payloadBase64.replace(/-/g, "+").replace(/_/g, "/"))
+        );
+      }
+
+      finalUser = {
+        id: (json.userId || json.sub || raw?.UserId || "").toString(),
+        name:
+          json.name ||
+          json.fullName ||
+          raw?.FullName ||
+          fallbackName ||
+          fallbackEmail ||
+          "",
+        email: json.sub || fallbackEmail || "",
+        role: finalRole,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    } catch (jwtError) {
+      // Fallback: create user from provided data
+      finalUser = {
+        id: Date.now().toString(),
+        name: fallbackName || fallbackEmail || "",
+        email: fallbackEmail || "",
+        role: "customer",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    setToken(mappedToken);
+    setRefreshToken(mappedRefreshToken || null);
+    setUser(finalUser);
+
+    localStorage.setItem("authToken", mappedToken);
+    localStorage.setItem("user", JSON.stringify(finalUser));
+    if (mappedRefreshToken) {
+      localStorage.setItem("refreshToken", mappedRefreshToken);
+    } else {
+      localStorage.removeItem("refreshToken");
+    }
+  };
 
   const login = async (credentials: LoginRequest) => {
     try {
       setIsLoading(true);
       const raw = (await apiService.login(credentials)) as any;
       console.log("Raw login response:", raw);
-
-      const mappedToken: string =
-        raw?.AccessToken ||
-        raw?.token ||
-        raw?.accessToken ||
-        raw?.access_token ||
-        raw?.jwt ||
-        "";
-      console.log("Mapped token:", mappedToken);
-
-      if (!mappedToken) {
-        console.error("No access token found in response:", raw);
-        throw new Error("No access token received");
-      }
-
-      // Decode JWT to get user info
-      let finalUser: User | null = null;
-      try {
-        const payloadBase64 = mappedToken.split(".")[1];
-        const json = JSON.parse(
-          atob(payloadBase64.replace(/-/g, "+").replace(/_/g, "/"))
-        );
-        console.log("JWT payload:", json);
-        const roleFromToken = (json.role || json.Role || "CUSTOMER")
-          .toString()
-          .toLowerCase();
-        console.log("Role from token:", roleFromToken);
-
-        finalUser = {
-          id: (json.userId || json.sub || "").toString(),
-          name: json.name || json.fullName || credentials.email || "",
-          email: json.sub || credentials.email || "",
-          role:
-            roleFromToken === "administrator" || roleFromToken === "admin"
-              ? ("admin" as const)
-              : ("customer" as const),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        console.log("Final user:", finalUser);
-      } catch (jwtError) {
-        // Fallback: create user from login data
-        finalUser = {
-          id: Date.now().toString(), // Temporary ID
-          name: credentials.email || "",
-          email: credentials.email || "",
-          role: "customer" as const,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-      }
-
-      setToken(mappedToken);
-      setUser(finalUser);
-
-      localStorage.setItem("authToken", mappedToken);
-      localStorage.setItem("user", JSON.stringify(finalUser));
+      handleAuthSuccess(raw, credentials.email, undefined);
     } catch (error) {
       console.error("Login failed:", error);
 
@@ -173,8 +226,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         };
 
         setToken("fallback-token");
+        setRefreshToken(null);
         setUser(fallbackUser);
         localStorage.setItem("authToken", "fallback-token");
+        localStorage.removeItem("refreshToken");
         localStorage.setItem("user", JSON.stringify(fallbackUser));
 
         // Redirect immediately - both admin and user go to user-dashboard
@@ -193,60 +248,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsLoading(true);
       const raw = (await apiService.register(userData)) as any;
       console.log("Raw register response:", raw);
-
-      const mappedToken: string =
-        raw?.AccessToken ||
-        raw?.token ||
-        raw?.accessToken ||
-        raw?.access_token ||
-        raw?.jwt ||
-        "";
-      console.log("Mapped token:", mappedToken);
-
-      if (!mappedToken) {
-        console.error("No access token found in response:", raw);
-        throw new Error("No access token received");
-      }
-
-      // Decode JWT to get user info
-      let finalUser: User | null = null;
-      try {
-        const payloadBase64 = mappedToken.split(".")[1];
-        const json = JSON.parse(
-          atob(payloadBase64.replace(/-/g, "+").replace(/_/g, "/"))
-        );
-        const roleFromToken = (json.role || json.Role || "CUSTOMER")
-          .toString()
-          .toLowerCase();
-
-        finalUser = {
-          id: (json.userId || json.sub || "").toString(),
-          name: json.name || json.fullName || userData.name || "",
-          email: json.sub || userData.email || "",
-          role:
-            roleFromToken === "administrator" || roleFromToken === "admin"
-              ? ("admin" as const)
-              : ("customer" as const),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-      } catch (jwtError) {
-        // Fallback: create user from registration data
-        finalUser = {
-          id: Date.now().toString(), // Temporary ID
-          name: userData.name || "",
-          email: userData.email || "",
-          role: "customer" as const,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-      }
-
-      setToken(mappedToken);
-      setUser(finalUser);
-
-      localStorage.setItem("authToken", mappedToken);
-      localStorage.setItem("user", JSON.stringify(finalUser));
+      handleAuthSuccess(raw, userData.email, userData.name);
     } catch (error) {
       console.error("Registration failed:", error);
 
@@ -267,8 +269,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         };
 
         setToken("fallback-token");
+        setRefreshToken(null);
         setUser(fallbackUser);
         localStorage.setItem("authToken", "fallback-token");
+        localStorage.removeItem("refreshToken");
         localStorage.setItem("user", JSON.stringify(fallbackUser));
 
         // Redirect immediately
@@ -282,11 +286,92 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const logout = () => {
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("user");
+  const loginWithGoogle = async (idToken: string) => {
+    try {
+      setIsLoading(true);
+      const raw = await apiService.googleLogin({ idToken });
+      console.log("Raw google login response:", raw);
+      // Với Google, email/name thường nằm trong JWT payload hoặc backend có thể map
+      handleAuthSuccess(raw);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const registerWithGoogle = async (idToken: string, fullName?: string, phoneNumber?: string) => {
+    try {
+      setIsLoading(true);
+      const raw = await apiService.googleRegister({ idToken, fullName, phoneNumber });
+      console.log("Raw google register response:", raw);
+      handleAuthSuccess(raw);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const refreshSession = async () => {
+    if (!token || !refreshToken) return;
+    try {
+      setIsLoading(true);
+      const raw = await apiService.refreshToken({
+        accessToken: token,
+        refreshToken,
+      });
+      const newAccess: string =
+        raw?.AccessToken ||
+        raw?.accessToken ||
+        raw?.access_token ||
+        "";
+      const newRefresh: string =
+        raw?.RefreshToken ||
+        raw?.refreshToken ||
+        raw?.refresh_token ||
+        refreshToken;
+
+      if (!newAccess) {
+        throw new Error("No access token received when refreshing session");
+      }
+
+      setToken(newAccess);
+      setRefreshToken(newRefresh || null);
+      localStorage.setItem("authToken", newAccess);
+      if (newRefresh) {
+        localStorage.setItem("refreshToken", newRefresh);
+      } else {
+        localStorage.removeItem("refreshToken");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const refreshUser = async () => {
+    if (!token) return;
+    try {
+      const updatedUser = await apiService.getCurrentUser();
+      setUser(updatedUser);
+      localStorage.setItem("user", JSON.stringify(updatedUser));
+    } catch (error) {
+      console.error("Failed to refresh user data:", error);
+      // Don't throw - just log the error
+    }
+  };
+
+  const logout = async () => {
+    try {
+      if (token) {
+        await apiService.revokeToken();
+      }
+    } catch (e) {
+      console.warn("Failed to revoke token on logout:", e);
+    } finally {
+      setUser(null);
+      setToken(null);
+      setRefreshToken(null);
+      localStorage.removeItem("authToken");
+      localStorage.removeItem("refreshToken");
+      localStorage.removeItem("user");
+    }
   };
 
   const isAuthenticated = !!user && !!token;
@@ -294,11 +379,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const value = {
     user,
     token,
+    refreshToken,
     isLoading,
     login,
     register,
+    loginWithGoogle,
+    registerWithGoogle,
     logout,
     isAuthenticated,
+    refreshSession,
+    refreshUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

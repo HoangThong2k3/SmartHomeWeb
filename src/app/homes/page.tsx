@@ -3,13 +3,21 @@
 import React, { useState, useEffect } from "react";
 import Layout from "@/components/layout/Layout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { ServiceGuard } from "@/components/auth/ServiceGuard";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiService } from "@/services/api";
+import { useServiceAccess } from "@/hooks/useServiceAccess";
 import { Home } from "@/types";
 import { Building2, Plus, Edit, Trash2, Users } from "lucide-react";
 
 export default function HomesPage() {
   const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const isCustomer = user?.role === "customer";
+  const {
+    isActive: canUseService,
+    isLoading: isServiceLoading,
+  } = useServiceAccess();
   const [homes, setHomes] = useState<Home[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -19,20 +27,22 @@ export default function HomesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
+    if (isServiceLoading) return;
+    if (!canUseService) {
+      setIsLoading(false);
+      return;
+    }
     fetchHomes();
-  }, [user]);
+  }, [user, canUseService, isServiceLoading]);
 
   const fetchHomes = async () => {
     try {
       setIsLoading(true);
 
-      if (user?.id) {
-        const userHomes = await apiService.getHomesByOwner(user.id);
-        setHomes(userHomes);
-      } else {
-        console.warn('[HomesPage] No user ID available. Cannot fetch homes.');
-        setHomes([]);
-      }
+      const userHomes = isAdmin
+        ? await apiService.getAllHomes()
+        : await apiService.getMyHomes();
+      setHomes(userHomes);
     } catch (err: any) {
       setError(err.message || "Failed to load homes");
     } finally {
@@ -41,14 +51,27 @@ export default function HomesPage() {
   };
 
   const handleCreateHome = async (homeData: any) => {
+    if (!isAdmin) {
+      setError("Chỉ quản trị viên mới có thể tạo Home.");
+      setTimeout(() => setError(null), 4000);
+      return;
+    }
     try {
       setIsSubmitting(true);
       setError(null);
       setSuccess(null);
       
+      const ownerIdFromForm = (homeData.ownerId || "").toString().trim();
+      const derivedOwnerId =
+        ownerIdFromForm || (user?.userId || user?.id || "").toString();
+
+      if (!derivedOwnerId) {
+        throw new Error("OwnerId is required to create a home.");
+      }
+
       const newHome = await apiService.createHome({
         name: homeData.name,
-        ownerId: user?.id || "",
+        ownerId: derivedOwnerId,
         securityStatus: homeData.securityStatus || "DISARMED",
       });
       
@@ -95,6 +118,11 @@ export default function HomesPage() {
   };
 
   const handleDeleteHome = async (id: string) => {
+    if (!isAdmin) {
+      setError("Chỉ quản trị viên mới có thể xóa Home.");
+      setTimeout(() => setError(null), 4000);
+      return;
+    }
     const home = homes.find((h) => h.id === id);
     const homeName = home?.name || "this home";
     
@@ -140,7 +168,8 @@ export default function HomesPage() {
 
   return (
     <ProtectedRoute>
-      <Layout>
+      <ServiceGuard>
+        <Layout>
         <div className="mb-8">
           <div className="flex justify-between items-center">
             <div>
@@ -166,13 +195,15 @@ export default function HomesPage() {
                 </div>
               </div>
             </div>
-            <button
-              onClick={() => setShowCreateForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Home
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setShowCreateForm(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Home
+              </button>
+            )}
           </div>
         </div>
 
@@ -207,14 +238,18 @@ export default function HomesPage() {
               No homes found
             </h3>
             <p className="text-gray-500 mb-4">
-              Get started by creating your first smart home.
+              {isCustomer
+                ? "Ngôi nhà sẽ được tạo và cấu hình khi bạn hoàn tất đăng ký dịch vụ."
+                : "Use the Add Home action to provision a property for một khách hàng cụ thể."}
             </p>
-            <button
-              onClick={() => setShowCreateForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-            >
-              Create Home
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setShowCreateForm(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+              >
+                Create Home
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -245,20 +280,25 @@ export default function HomesPage() {
                     </div>
                   </div>
                   <div className="flex space-x-2">
-                    <button
-                      onClick={() => setEditingHome(home)}
-                      className="text-blue-600 hover:text-blue-800"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteHome(home.id)}
-                      disabled={isSubmitting}
-                      className="text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Delete home"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {isCustomer && (
+                      <button
+                        onClick={() => setEditingHome(home)}
+                        className="text-blue-600 hover:text-blue-800"
+                        title="Đổi tên / trạng thái an ninh"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleDeleteHome(home.id)}
+                        disabled={isSubmitting}
+                        className="text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Delete home"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -266,21 +306,23 @@ export default function HomesPage() {
           </div>
         )}
 
-        {showCreateForm && (
+        {isAdmin && showCreateForm && (
           <CreateHomeForm
             onSubmit={handleCreateHome}
             onCancel={() => setShowCreateForm(false)}
+            isAdmin={isAdmin}
           />
         )}
 
-        {editingHome && (
+        {isCustomer && editingHome && (
           <EditHomeForm
             home={editingHome}
             onSubmit={(data) => handleUpdateHome(editingHome.id, data)}
             onCancel={() => setEditingHome(null)}
           />
         )}
-      </Layout>
+        </Layout>
+      </ServiceGuard>
     </ProtectedRoute>
   );
 }
@@ -288,13 +330,16 @@ export default function HomesPage() {
 function CreateHomeForm({
   onSubmit,
   onCancel,
+  isAdmin = false,
 }: {
   onSubmit: (data: any) => void;
   onCancel: () => void;
+  isAdmin?: boolean;
 }) {
   const [formData, setFormData] = useState({
     name: "",
     securityStatus: "DISARMED",
+    ownerId: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -327,6 +372,25 @@ function CreateHomeForm({
               required
             />
           </div>
+          {isAdmin && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Owner ID
+              </label>
+              <input
+                type="text"
+                value={formData.ownerId}
+                onChange={(e) =>
+                  setFormData({ ...formData, ownerId: e.target.value })
+                }
+                placeholder="Nhập UserId của khách hàng"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Hệ thống sẽ gán ngôi nhà này cho khách hàng có ID tương ứng.
+              </p>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Security Status

@@ -3,13 +3,19 @@
 import React, { useState, useEffect } from "react";
 import Layout from "@/components/layout/Layout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { ServiceGuard } from "@/components/auth/ServiceGuard";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiService } from "@/services/api";
+import { useServiceAccess } from "@/hooks/useServiceAccess";
 import { Device, Home, Room, CreateSensorDataRequest } from "@/types";
 import { Thermometer, Plus, Eye, Trash2, Calendar, Filter, Edit } from "lucide-react";
 
 export default function SensorDataPage() {
   const { user } = useAuth();
+  const {
+    isActive: canUseService,
+    isLoading: isServiceLoading,
+  } = useServiceAccess();
   const [sensorData, setSensorData] = useState<any[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [homes, setHomes] = useState<Home[]>([]);
@@ -21,16 +27,21 @@ export default function SensorDataPage() {
   const [dateRange, setDateRange] = useState({ from: "", to: "" });
 
   useEffect(() => {
+    if (isServiceLoading) return;
+    if (!canUseService) {
+      setIsLoading(false);
+      return;
+    }
     fetchDevices();
-  }, [user]);
+  }, [user, canUseService, isServiceLoading]);
 
   useEffect(() => {
-    if (selectedDevice) {
+    if (selectedDevice && canUseService) {
       fetchSensorData();
     } else {
       setSensorData([]);
     }
-  }, [selectedDevice, dateRange]);
+  }, [selectedDevice, dateRange, canUseService]);
 
   const fetchDevices = async () => {
     try {
@@ -41,7 +52,7 @@ export default function SensorDataPage() {
       // Fetch homes first
       let userHomes: Home[] = [];
       if (user?.id) {
-        userHomes = await apiService.getHomesByOwner(user.id);
+        userHomes = await apiService.getMyHomes();
       }
       setHomes(userHomes);
 
@@ -265,18 +276,21 @@ export default function SensorDataPage() {
   if (isLoading && devices.length === 0) {
     return (
       <ProtectedRoute>
-        <Layout>
-          <div className="flex items-center justify-center h-64">
+        <ServiceGuard>
+          <Layout>
+            <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
-        </Layout>
+            </div>
+          </Layout>
+        </ServiceGuard>
       </ProtectedRoute>
     );
   }
 
   return (
     <ProtectedRoute>
-      <Layout>
+      <ServiceGuard>
+        <Layout>
         <div className="mb-8">
           <div className="flex justify-between items-center">
             <div>
@@ -456,7 +470,8 @@ export default function SensorDataPage() {
             onCancel={() => setEditingSensorData(null)}
           />
         )}
-      </Layout>
+        </Layout>
+      </ServiceGuard>
     </ProtectedRoute>
   );
 }

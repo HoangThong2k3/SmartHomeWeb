@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import Image from "next/image";
+import logoSmartHome from "@/app/logo/logoSmartHome.png";
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -17,9 +19,14 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto flex items-center justify-between px-4 sm:px-6">
         <div className="flex gap-2 items-center">
           <Link href="/" className="flex gap-2 items-center">
-            <span className="bg-blue-600 rounded-full p-2 mr-1">
-              <span className="text-white text-lg">🏠</span>
-            </span>
+            <Image
+              src={logoSmartHome}
+              alt="Smart Home"
+              width={36}
+              height={36}
+              className="rounded-md object-contain"
+              priority
+            />
             <span className="text-xl font-bold tracking-tight text-blue-700 select-none">SmartHome</span>
           </Link>
         </div>
@@ -48,8 +55,8 @@ export default function Navbar() {
           {/* Phone Number */}
           <div className="hidden lg:flex items-center gap-2 text-blue-600">
             <span className="text-xl">📞</span>
-            <a href="tel:0123456789" className="font-semibold hover:underline">
-              0123 456 789
+            <a href="tel:0768524415" className="font-semibold hover:underline">
+              0768524415
             </a>
           </div>
 
@@ -72,8 +79,8 @@ export default function Navbar() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-blue-600">
               <span>📞</span>
-              <a href="tel:0123456789" className="font-semibold text-sm">
-                0123 456 789
+              <a href="tel:0768524415" className="font-semibold text-sm">
+                0768524415
               </a>
             </div>
             <div className="flex gap-2">

@@ -51,7 +51,7 @@ export default function QuotePage() {
               </ul>
               <div className="mt-8 p-4 bg-blue-50 rounded-lg">
                 <p className="text-gray-700 mb-2">Hoặc gọi cho chúng tôi ngay:</p>
-                <a href="tel:0123456789" className="text-blue-600 font-bold text-xl">0123 456 789</a>
+                <a href="tel:0768524415" className="text-blue-600 font-bold text-xl">0768524415</a>
               </div>
             </div>
 

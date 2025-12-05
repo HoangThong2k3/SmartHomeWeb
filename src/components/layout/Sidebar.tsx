@@ -13,6 +13,9 @@ import {
   Zap,
   Thermometer,
   Activity,
+  CreditCard,
+  Package,
+  MessageSquare,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -28,11 +31,15 @@ export default function Sidebar() {
       { name: "Devices", href: "/devices", icon: Cpu },
       { name: "Automations", href: "/automations", icon: Zap },
       { name: "Sensor Data", href: "/sensor-data", icon: Thermometer },
+      { name: "Payments", href: "/payments", icon: CreditCard },
     ];
 
     // Admin only items
     if (user?.role === "admin") {
       baseItems.splice(1, 0, { name: "Users", href: "/users", icon: Users });
+      baseItems.splice(2, 0, { name: "Admin Payments", href: "/admin/payments", icon: CreditCard });
+      baseItems.splice(3, 0, { name: "Service Packages", href: "/admin/packages", icon: Package });
+      baseItems.splice(4, 0, { name: "Support Requests", href: "/admin/support-requests", icon: MessageSquare });
     }
 
     // Add system pages

@@ -2,6 +2,8 @@
 import {
   LoginRequest,
   RegisterRequest,
+  GoogleLoginRequest,
+  GoogleRegisterRequest,
   AuthResponse,
   User,
   CreateUserRequest,
@@ -22,22 +24,41 @@ import {
   CreateSensorDataRequest,
   SensorDataQuery,
   HealthInfo,
+  SystemStats,
+  DetailedHealthInfo,
   WeatherForecast,
   ApiResponse,
   PaginatedResponse,
   ForgotPasswordResponse,
   ResetPasswordRequest,
+  ServicePackage,
+  CreatePaymentLinkRequest,
+  PaymentLinkResponse,
+  ServicePayment,
+  CreateCustomPaymentBillRequest,
+  PaymentStatus,
+  PayOSCallbackPayload,
+  PaymentConfirmationResponse,
+  SupportRequest,
+  CreateSupportRequestRequest,
+  UpdateSupportRequestStatusRequest,
 } from "@/types";
 
+// Base URL cho backend, ưu tiên lấy từ biến môi trường NEXT_PUBLIC_API_URL
+// Ví dụ: NEXT_PUBLIC_API_URL=https://smarthomes-fdbehwcuaaexaggv.eastasia-01.azurewebsites.net/api
 const API_BASE_URL =
-  "https://smarthome-bnauatedb7bucncy.eastasia-01.azurewebsites.net/api";
-// Fallback base paths for Azure deployments that may differ by prefix
+  process.env.NEXT_PUBLIC_API_URL ??
+  "https://smarthomes-fdbehwcuaaexaggv.eastasia-01.azurewebsites.net/api";
+// Fallback base paths cho một số trường hợp backend deploy khác prefix
 const API_BASE_URL_FALLBACKS: string[] = [
-  "https://smarthome-bnauatedb7bucncy.eastasia-01.azurewebsites.net", // no /api
-  "https://smarthome-bnauatedb7bucncy.eastasia-01.azurewebsites.net/api/v1", // versioned api
+  "https://smarthomes-fdbehwcuaaexaggv.eastasia-01.azurewebsites.net", // không có /api
+  "https://smarthomes-fdbehwcuaaexaggv.eastasia-01.azurewebsites.net/api/v1", // versioned api
 ];
 
 class ApiService {
+  private isRefreshing = false;
+  private refreshPromise: Promise<string | null> | null = null;
+
   private getAuthToken(): string | null {
     if (typeof window !== "undefined") {
       return localStorage.getItem("authToken");
@@ -48,15 +69,23 @@ class ApiService {
   // Mapping helpers to align FE types with backend docs
   private mapUserFromApi(api: any): User {
     const roleLower = (api?.role || api?.Role || "")?.toString()?.toLowerCase();
+    const userId = api?.UserId ?? api?.userId ?? api?.Id ?? api?.id;
     return {
-      id: (api?.id || api?.userId || api?.Id || "").toString(),
-      name: api?.name || api?.fullName || api?.username || api?.Email || "",
-      email: api?.email || api?.Email || "",
-      role: (roleLower === "administrator" ? "admin" : roleLower) as
+      id: userId ? userId.toString() : "",
+      userId: typeof userId === "number" ? userId : undefined,
+      name: api?.FullName || api?.fullName || api?.name || api?.username || api?.Email || "",
+      fullName: api?.FullName || api?.fullName,
+      email: api?.Email || api?.email || "",
+      role: (roleLower === "administrator" || roleLower === "admin" ? "admin" : "customer") as
         | "admin"
         | "customer",
-      createdAt: api?.createdAt || api?.CreatedAt || new Date().toISOString(),
-      updatedAt: api?.updatedAt || api?.UpdatedAt || new Date().toISOString(),
+      phoneNumber: api?.PhoneNumber || api?.phoneNumber,
+      serviceStatus: api?.ServiceStatus || api?.serviceStatus,
+      serviceExpiryDate: api?.ServiceExpiryDate || api?.serviceExpiryDate,
+      address: api?.Address || api?.address,
+      currentPackageId: api?.CurrentPackageId ?? api?.currentPackageId,
+      createdAt: api?.CreatedAt || api?.createdAt || new Date().toISOString(),
+      updatedAt: api?.UpdatedAt || api?.updatedAt || new Date().toISOString(),
     };
   }
 
@@ -298,6 +327,7 @@ class ApiService {
         (api as any)?.status ||
         (api?.currentState ?? api?.CurrentState ? "online" : "offline"),
       roomId: (api?.roomId ?? api?.RoomId ?? "").toString(),
+      currentState: api?.currentState ?? api?.CurrentState ?? null,
       lastUpdate: now,
       createdAt: api?.createdAt ?? api?.CreatedAt ?? now,
       updatedAt: api?.updatedAt ?? api?.UpdatedAt ?? now,
@@ -573,11 +603,125 @@ class ApiService {
 
       console.log(`Response status: ${response.status}`);
 
+      // Handle 401 Unauthorized - try to refresh token
+      if (response.status === 401) {
+        // Don't try to refresh if we're already refreshing or if this is a refresh token request
+        if (endpoint.includes("/Auth/refresh-token")) {
+          // This is a refresh token request itself, don't retry
+          let errorMessage = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
+          try {
+            const errorData = await response.json();
+            if (errorData?.detail || errorData?.Message || errorData?.message) {
+              errorMessage = errorData.detail || errorData.Message || errorData.message;
+            }
+          } catch (e) {
+            // Use default message
+          }
+          
+          // Clear tokens
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("authToken");
+            localStorage.removeItem("refreshToken");
+            localStorage.removeItem("user");
+          }
+          
+          throw new Error(errorMessage);
+        }
+
+        const refreshTokenValue = typeof window !== "undefined" 
+          ? localStorage.getItem("refreshToken") 
+          : null;
+        
+        if (refreshTokenValue && token && !this.isRefreshing) {
+          // Use existing refresh promise if available
+          if (!this.refreshPromise) {
+            this.isRefreshing = true;
+            this.refreshPromise = this.performTokenRefresh(token, refreshTokenValue);
+          }
+          
+          try {
+            const newAccessToken = await this.refreshPromise;
+            
+            if (newAccessToken) {
+              // Retry original request with new token
+              const retryConfig: RequestInit = {
+                ...config,
+                headers: {
+                  ...config.headers,
+                  Authorization: `Bearer ${newAccessToken}`,
+                },
+              };
+              
+              console.log("Retrying request with new token...");
+              const retryResponse = await fetch(primaryUrl, retryConfig);
+              
+              if (retryResponse.ok) {
+                const contentType = retryResponse.headers.get("content-type");
+                if (contentType && contentType.includes("application/json")) {
+                  const retryData = await retryResponse.json();
+                  return retryData as T;
+                } else {
+                  const text = await retryResponse.text();
+                  return { message: text } as T;
+                }
+              } else if (retryResponse.status === 401) {
+                // Still 401 after refresh, clear tokens
+                if (typeof window !== "undefined") {
+                  localStorage.removeItem("authToken");
+                  localStorage.removeItem("refreshToken");
+                  localStorage.removeItem("user");
+                }
+              }
+            }
+          } catch (refreshError) {
+            console.error("Token refresh failed:", refreshError);
+            // Clear tokens on refresh failure
+            if (typeof window !== "undefined") {
+              localStorage.removeItem("authToken");
+              localStorage.removeItem("refreshToken");
+              localStorage.removeItem("user");
+            }
+          } finally {
+            // Reset refresh state
+            this.isRefreshing = false;
+            this.refreshPromise = null;
+          }
+        }
+        
+        // If no refresh token or refresh failed, throw error
+        let errorMessage = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
+        try {
+          const errorData = await response.json();
+          if (errorData?.detail || errorData?.Message || errorData?.message) {
+            errorMessage = errorData.detail || errorData.Message || errorData.message;
+          }
+        } catch (e) {
+          // Use default message
+        }
+        throw new Error(errorMessage);
+      }
+
       if (!response.ok) {
         let errorMessage = `HTTP error! status: ${response.status}`;
         try {
           const errorData = await response.json();
-          errorMessage = errorData.message || errorData.detail || errorMessage;
+          // Ưu tiên các field message chuẩn từ backend (Message / message) vàErrors nếu có
+          if (errorData) {
+            const baseMessage =
+              errorData.message ||
+              errorData.Message ||
+              errorData.detail ||
+              errorMessage;
+            const errorsArray: string[] =
+              errorData.errors ||
+              errorData.Errors ||
+              [];
+            const errorsText =
+              Array.isArray(errorsArray) && errorsArray.length > 0
+                ? `: ${errorsArray.join(" | ")}`
+                : "";
+            errorMessage = `${baseMessage}${errorsText}`;
+          }
         } catch (parseError) {
           // If response is not JSON, use status text
           errorMessage = response.statusText || errorMessage;
@@ -646,7 +790,8 @@ class ApiService {
     };
 
     try {
-      const response = await this.request<AuthResponse>("/auth/login", {
+      // API spec: POST /api/Auth/login
+      const response = await this.request<AuthResponse>("/Auth/login", {
         method: "POST",
         body: JSON.stringify(payload),
       });
@@ -658,8 +803,49 @@ class ApiService {
     }
   }
 
+  // Google OAuth Authentication APIs
+  async googleLogin(request: GoogleLoginRequest): Promise<AuthResponse> {
+    const payload = {
+      idToken: request.idToken,
+    };
+
+    try {
+      // API spec: POST /api/Auth/google-login
+      const response = await this.request<AuthResponse>("/Auth/google-login", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      console.log("Google login API response:", response);
+      return response;
+    } catch (error: any) {
+      console.error("Google login failed:", error);
+      throw error;
+    }
+  }
+
+  async googleRegister(request: GoogleRegisterRequest): Promise<AuthResponse> {
+    const payload: any = {
+      idToken: request.idToken,
+    };
+    if (request.fullName) payload.fullName = request.fullName;
+    if (request.phoneNumber) payload.phoneNumber = request.phoneNumber;
+
+    try {
+      // API spec: POST /api/Auth/google-register
+      const response = await this.request<AuthResponse>("/Auth/google-register", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      console.log("Google register API response:", response);
+      return response;
+    } catch (error: any) {
+      console.error("Google register failed:", error);
+      throw error;
+    }
+  }
+
   async register(userData: RegisterRequest): Promise<any> {
-    // Backend expects: { Email, Password, FullName, PhoneNumber, ServiceExpiryDate }
+    // Backend nhận body phẳng: { Email, Password, FullName, PhoneNumber, ServiceExpiryDate }
     const payload: any = {
       Email: userData.email,
       Password: userData.password,
@@ -676,7 +862,8 @@ class ApiService {
     console.log("Register payload:", payload);
 
     try {
-      const response = await this.request<any>("/auth/register", {
+      // API spec: POST /api/Auth/register
+      const response = await this.request<any>("/Auth/register", {
         method: "POST",
         body: JSON.stringify(payload),
       });
@@ -691,32 +878,160 @@ class ApiService {
   // Auth Password APIs
   async forgotPassword(email: string): Promise<ForgotPasswordResponse> {
     const payload = { Email: email };
-    // Use proxy route to avoid CORS issues
+    // Gọi trực tiếp backend (CORS đã allow http://localhost:3000)
     // API spec: POST /api/Auth/forgot-password
-    // Returns 200 with { Code: string | null, Message: string }
-    // If email exists: Code is generated (TTL ~10 min), if not: Code = null but still 200
-    const response = await this.requestViaProxy<ForgotPasswordResponse>(
-      "/Auth/forgot-password",
-      {
+    // BE trả dạng envelope: { IsSuccess, Message, Errors, Code? }
+    const raw = await this.request<any>("/Auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    const result: ForgotPasswordResponse = {
+      Code: raw?.Code ?? null,
+      Message:
+        raw?.Message ||
+        raw?.message ||
+        (raw?.IsSuccess
+          ? "Reset code has been sent if the email exists."
+          : "Failed to request password reset"),
+    };
+
+    return result;
+  }
+
+  // Internal method to perform token refresh without going through request() to avoid infinite loop
+  private async performTokenRefresh(
+    accessToken: string,
+    refreshTokenValue: string
+  ): Promise<string | null> {
+    const payload = {
+      AccessToken: accessToken,
+      RefreshToken: refreshTokenValue,
+    };
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/Auth/refresh-token`, {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        mode: "cors",
         body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Refresh token failed: ${response.status}`);
       }
-    );
-    return response;
+
+      const refreshResponse = await response.json();
+      const newAccessToken =
+        refreshResponse?.AccessToken ||
+        refreshResponse?.accessToken ||
+        refreshResponse?.access_token ||
+        "";
+
+      if (newAccessToken) {
+        // Save new token
+        if (typeof window !== "undefined") {
+          localStorage.setItem("authToken", newAccessToken);
+          // Update refresh token if provided
+          const newRefreshToken =
+            refreshResponse?.RefreshToken ||
+            refreshResponse?.refreshToken ||
+            refreshResponse?.refresh_token;
+          if (newRefreshToken) {
+            localStorage.setItem("refreshToken", newRefreshToken);
+          }
+        }
+        return newAccessToken;
+      }
+
+      return null;
+    } catch (error) {
+      console.error("Token refresh error:", error);
+      return null;
+    }
+  }
+
+  // Token lifecycle APIs
+  async refreshToken(params: {
+    accessToken: string;
+    refreshToken: string;
+  }): Promise<any> {
+    const payload = {
+      AccessToken: params.accessToken,
+      RefreshToken: params.refreshToken,
+    };
+    // API spec: POST /api/Auth/refresh-token
+    // Use direct fetch to avoid infinite loop
+    const response = await fetch(`${API_BASE_URL}/Auth/refresh-token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      mode: "cors",
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData.detail ||
+          errorData.Message ||
+          errorData.message ||
+          `Refresh token failed: ${response.status}`
+      );
+    }
+
+    return response.json();
+  }
+
+  async revokeToken(): Promise<void> {
+    // API spec: POST /api/Auth/revoke-token
+    // Yêu cầu header Authorization: Bearer {accessToken} (đã được thêm trong this.request)
+    await this.request<void>("/Auth/revoke-token", {
+      method: "POST",
+    });
+  }
+
+  // Email confirmation APIs
+  async confirmEmail(userId: string, token: string): Promise<any> {
+    const params = new URLSearchParams({ userId, token }).toString();
+    // API spec: GET /api/Auth/confirm-email?userId=...&token=...
+    return this.request<any>(`/Auth/confirm-email?${params}`);
+  }
+
+  async resendConfirmationEmail(email: string): Promise<any> {
+    const payload = { Email: email };
+    // API spec: POST /api/Auth/resend-confirmation-email
+    return this.request<any>("/Auth/resend-confirmation-email", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   }
 
   async resetPassword({
     Email,
     Code,
     NewPassword,
-  }: ResetPasswordRequest): Promise<any> {
-    const payload = { Email, Code, NewPassword };
-    console.log("Reset password payload:", payload);
-    // Use proxy route to avoid CORS issues
-    // API spec: POST /api/Auth/reset-password
+    ...rest
+  }: ResetPasswordRequest & { ConfirmPassword?: string }): Promise<any> {
+    // Backend spec: POST /api/Auth/reset-password-by-email
+    // Body: { Email, Token, NewPassword, ConfirmPassword }
+    const payload: any = {
+      Email,
+      Token: Code,
+      NewPassword,
+      ConfirmPassword:
+        (rest as any).ConfirmPassword ?? (rest as any).confirm ?? NewPassword,
+    };
+    console.log("Reset password payload (mapped to API):", payload);
+    // API spec: POST /api/Auth/reset-password-by-email
     // Returns 200 on success, or 400/401/404 on errors
     try {
-      const response = await this.requestViaProxy<any>("/Auth/reset-password", {
+      const response = await this.request<any>("/Auth/reset-password-by-email", {
         method: "POST",
         body: JSON.stringify(payload),
       });
@@ -737,26 +1052,37 @@ class ApiService {
   async updateProfile(profileData: {
     name?: string;
     phoneNumber?: string;
+    password?: string;
+    address?: string;
   }): Promise<User> {
+    // API spec: PUT /api/Users/profile
+    // Body: { FullName, PhoneNumber, Password?, Address }
     const payload: any = {};
-    if (profileData.name) payload.fullName = profileData.name;
-    if (profileData.phoneNumber) payload.phoneNumber = profileData.phoneNumber;
+    if (profileData.name) payload.FullName = profileData.name;
+    if (profileData.phoneNumber) payload.PhoneNumber = profileData.phoneNumber;
+    if (profileData.password) payload.Password = profileData.password;
+    if (profileData.address !== undefined) payload.Address = profileData.address;
 
-    const updated = await this.request<any>("/Users/profile", {
+    // Backend trả 204 No Content, nên cần fetch lại user sau khi update
+    await this.request<void>("/Users/profile", {
       method: "PUT",
       body: JSON.stringify(payload),
     });
-    return this.mapUserFromApi(updated);
+    // Fetch lại user mới sau khi update
+    return this.getCurrentUser();
   }
 
   async changePassword(passwordData: {
     currentPassword: string;
     newPassword: string;
   }): Promise<void> {
+    // API spec: PUT /api/Users/change-password
+    // Body: { CurrentPassword, NewPassword }
     const payload = {
-      currentPassword: passwordData.currentPassword,
-      newPassword: passwordData.newPassword,
+      CurrentPassword: passwordData.currentPassword,
+      NewPassword: passwordData.newPassword,
     };
+    // Backend trả 204 No Content
     await this.request<void>("/Users/change-password", {
       method: "PUT",
       body: JSON.stringify(payload),
@@ -774,14 +1100,23 @@ class ApiService {
   }
 
   async createUser(userData: CreateUserRequest): Promise<User> {
-    const payload = {
-      email: userData.email,
-      password: userData.password,
-      fullName: userData.name,
-      role: userData.role === "admin" ? "ADMIN" : "CUSTOMER",
-      phoneNumber: userData.phoneNumber,
-      serviceExpiryDate: userData.serviceExpiryDate,
+    const payload: any = {
+      Email: userData.email,
+      Password: userData.password,
+      FullName: userData.name,
+      Role: userData.role === "admin" ? "ADMIN" : "CUSTOMER",
     };
+    if (userData.phoneNumber) payload.PhoneNumber = userData.phoneNumber;
+    if (userData.serviceExpiryDate)
+      payload.ServiceExpiryDate = userData.serviceExpiryDate;
+    if (userData.address) payload.Address = userData.address;
+    if (
+      userData.currentPackageId !== undefined &&
+      userData.currentPackageId !== null
+    ) {
+      payload.CurrentPackageId = userData.currentPackageId;
+    }
+
     const created = await this.request<any>("/Users", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -791,14 +1126,17 @@ class ApiService {
 
   async updateUser(id: string, userData: UpdateUserRequest): Promise<void> {
     const payload: any = {};
-    if (userData.name) payload.fullName = userData.name;
+    if (userData.name) payload.FullName = userData.name;
     if (userData.role)
-      payload.role = userData.role === "admin" ? "ADMIN" : "CUSTOMER";
+      payload.Role = userData.role === "admin" ? "ADMIN" : "CUSTOMER";
     if (userData.phoneNumber !== undefined)
-      payload.phoneNumber = userData.phoneNumber;
-    if (userData.serviceStatus) payload.serviceStatus = userData.serviceStatus;
+      payload.PhoneNumber = userData.phoneNumber;
+    if (userData.serviceStatus) payload.ServiceStatus = userData.serviceStatus;
     if (userData.serviceExpiryDate)
-      payload.serviceExpiryDate = userData.serviceExpiryDate;
+      payload.ServiceExpiryDate = userData.serviceExpiryDate;
+    if (userData.address !== undefined) payload.Address = userData.address;
+    if (userData.currentPackageId !== undefined)
+      payload.CurrentPackageId = userData.currentPackageId;
 
     await this.request<void>(`/Users/${id}`, {
       method: "PUT",
@@ -806,9 +1144,9 @@ class ApiService {
     });
   }
 
-  async toggleUserStatus(id: string, isBanned: boolean): Promise<void> {
+  async toggleUserStatus(id: string, serviceStatus: string): Promise<void> {
     const payload = {
-      isBanned: isBanned,
+      ServiceStatus: serviceStatus,
     };
     await this.request<void>(`/Users/${id}/status`, {
       method: "PATCH",
@@ -822,45 +1160,155 @@ class ApiService {
     });
   }
 
+  // Helper method to get userId from JWT token
+  private getUserIdFromToken(): number | null {
+    try {
+      const token = this.getAuthToken();
+      if (!token) return null;
+      
+      // Decode JWT token to get userId
+      const parts = token.split(".");
+      if (parts.length !== 3) {
+        console.warn("[ApiService] Invalid JWT token format");
+        return null;
+      }
+      
+      try {
+        // Try standard base64 decode
+        let payloadBase64 = parts[1];
+        // Add padding if needed
+        while (payloadBase64.length % 4) {
+          payloadBase64 += "=";
+        }
+        
+        // Replace URL-safe characters
+        const base64 = payloadBase64.replace(/-/g, "+").replace(/_/g, "/");
+        const decoded = atob(base64);
+        const payload = JSON.parse(decoded);
+        
+        // Try multiple possible field names for userId
+        const userId = payload.userId || payload.UserId || payload.user_id || payload.sub || null;
+        
+        if (userId) {
+          const userIdNum = typeof userId === "number" ? userId : parseInt(userId);
+          if (!isNaN(userIdNum) && userIdNum > 0) {
+            return userIdNum;
+          }
+        }
+        
+        console.warn("[ApiService] userId not found in JWT payload:", payload);
+        return null;
+      } catch (decodeError) {
+        console.error("[ApiService] Error decoding JWT payload:", decodeError);
+        return null;
+      }
+    } catch (error) {
+      console.error("[ApiService] Error getting userId from token:", error);
+      return null;
+    }
+  }
+
   // Homes Management APIs
   async getHomeById(id: string): Promise<Home> {
     const data = await this.request<any>(`/Homes/${id}`);
     return this.mapHomeFromApi(data);
   }
 
-  async getHomesByOwner(ownerId: string): Promise<Home[]> {
+  // Admin: get all homes in the system
+  async getAllHomes(): Promise<Home[]> {
+    const list = await this.request<any[]>(`"/Homes"`.replace(/"/g, ""));
+    return (list || []).map((h) => this.mapHomeFromApi(h));
+  }
+
+  // Get homes for current user
+  // Theo Swagger: Customer nên dùng GET /Homes/my-homes để lấy danh sách nhà của chính mình
+  // Admin không thể sử dụng endpoint này (Privacy Wall)
+  async getMyHomes(): Promise<Home[]> {
+    try {
+      console.log("[ApiService] getMyHomes -> calling GET /Homes/my-homes (customer only)");
+      const list = await this.request<any[]>("/Homes/my-homes");
+      console.log("[ApiService] getMyHomes - Successfully fetched homes:", list?.length || 0);
+      return (list || []).map((h) => this.mapHomeFromApi(h));
+    } catch (err: any) {
+      const msg = (err?.message || "").toLowerCase();
+      
+      // Nếu bị 401/403, có thể là:
+      // 1. Admin đang cố gọi endpoint này (Privacy Wall - expected behavior)
+      // 2. Customer chưa có home được tạo
+      // 3. Token không hợp lệ
+      if (msg.includes("403") || msg.includes("forbidden") || msg.includes("401") || msg.includes("unauthorized")) {
+        console.log("[ApiService] getMyHomes - Permission issue (403/401). This endpoint is for customers only. Admin should not use this endpoint.");
+        return [];
+      }
+      
+      // Chỉ log error cho các lỗi khác
+      console.error("[ApiService] Error getting my homes:", err);
+      return [];
+    }
+  }
+
+  async getHomesByOwner(ownerId: string | number): Promise<Home[]> {
+    // Convert to number if string
+    const ownerIdNum = typeof ownerId === "string" ? parseInt(ownerId) : ownerId;
+    
     // Validate ownerId - return empty array if invalid
-    if (!ownerId || ownerId.trim() === "" || isNaN(Number(ownerId))) {
+    if (!ownerId || isNaN(ownerIdNum) || ownerIdNum <= 0) {
       console.warn(
         `[ApiService] Invalid ownerId provided: "${ownerId}". Returning empty array.`
       );
       return [];
     }
 
+    // Get userId from token to verify permission
+    const tokenUserId = this.getUserIdFromToken();
+    
+    // Backend chỉ cho phép user xem homes của chính mình (userId trong token phải match với ownerId)
+    // Nếu không match, return empty array thay vì throw error
+    if (tokenUserId && tokenUserId !== ownerIdNum) {
+      console.warn(
+        `[ApiService] User ${tokenUserId} trying to access homes of owner ${ownerIdNum}. Permission denied.`
+      );
+      return [];
+    }
+
     try {
-      const list = await this.request<any[]>(`/Homes/owner/${ownerId}`);
+      const list = await this.request<any[]>(`/Homes/owner/${ownerIdNum}`);
       return (list || []).map((h) => this.mapHomeFromApi(h));
     } catch (err: any) {
+      // If 403 Forbidden, user không có quyền xem homes này
+      if (
+        err?.message?.includes("403") ||
+        err?.message?.includes("Forbidden") ||
+        err?.message?.includes("permission")
+      ) {
+        console.warn(
+          `[ApiService] Permission denied for ownerId ${ownerIdNum}. User can only view their own homes.`
+        );
+        return [];
+      }
+      
       // If 404, it might mean the user has no homes, which is valid - return empty array
       if (
         err?.message?.includes("404") ||
         err?.message?.includes("Not Found")
       ) {
         console.log(
-          `[ApiService] No homes found for ownerId ${ownerId}. Returning empty array.`
+          `[ApiService] No homes found for ownerId ${ownerIdNum}. Returning empty array.`
         );
         return [];
       }
+      
       // For other errors, rethrow
       throw err;
     }
   }
 
   async createHome(homeData: CreateHomeRequest): Promise<Home> {
+    // Convert camelCase to PascalCase for backend
     const payload = {
-      name: homeData.name,
-      ownerId: parseInt(homeData.ownerId),
-      securityStatus: homeData.securityStatus || "DISARMED",
+      Name: homeData.name,
+      OwnerId: parseInt(homeData.ownerId),
+      SecurityStatus: homeData.securityStatus || "DISARMED",
     };
     const created = await this.request<any>("/Homes", {
       method: "POST",
@@ -914,6 +1362,11 @@ class ApiService {
   }
 
   // Rooms Management APIs
+  async getRoomById(id: string): Promise<Room> {
+    const room = await this.request<any>(`/Rooms/${id}`);
+    return this.mapRoomFromApi(room);
+  }
+
   async getRoomsByHome(homeId: string): Promise<Room[]> {
     const list = await this.request<any[]>(`/Rooms/home/${homeId}`);
     return (list || []).map((r) => this.mapRoomFromApi(r));
@@ -1331,22 +1784,346 @@ class ApiService {
     }
   }
 
-  // Health Check APIs
-  async getHealthLive(): Promise<any> {
-    return this.request<any>("/Health/live");
+  // Health Check APIs (theo Swagger)
+  async getHealthLive(): Promise<HealthInfo> {
+    // Không cần authentication - public endpoint
+    const data = await this.request<any>("/Health/live");
+    return this.mapHealthInfoFromApi(data);
   }
 
-  async getHealthReady(): Promise<any> {
-    return this.request<any>("/Health/ready");
+  async getHealthReady(): Promise<HealthInfo> {
+    // Yêu cầu Admin authentication
+    const data = await this.request<any>("/Health/ready");
+    return this.mapHealthInfoFromApi(data);
   }
 
-  async getHealthInfo(): Promise<any> {
-    return this.request<any>("/Health/info");
+  async getHealthInfo(): Promise<HealthInfo> {
+    // Yêu cầu Admin hoặc Customer authentication
+    const data = await this.request<any>("/Health/info");
+    return this.mapHealthInfoFromApi(data);
+  }
+
+  async getHealthStats(): Promise<SystemStats> {
+    // Yêu cầu Admin authentication
+    const data = await this.request<any>("/Health/stats");
+    return this.mapSystemStatsFromApi(data);
+  }
+
+  async getHealthDetailed(): Promise<DetailedHealthInfo> {
+    // Yêu cầu Admin authentication
+    const data = await this.request<any>("/Health/detailed");
+    return this.mapDetailedHealthInfoFromApi(data);
+  }
+
+  // Health API Mappers
+  private mapHealthInfoFromApi(api: any): HealthInfo {
+    return {
+      Status: api?.Status || api?.status || "Unknown",
+      CheckedAtUtc: api?.CheckedAtUtc || api?.checkedAtUtc || new Date().toISOString(),
+      Entries: (api?.Entries || api?.entries || []).map((entry: any) => ({
+        Name: entry?.Name || entry?.name || "",
+        Status: entry?.Status || entry?.status || "Unknown",
+        Description: entry?.Description || entry?.description || "",
+        DurationMs: entry?.DurationMs ?? entry?.durationMs ?? 0,
+      })),
+      Meta: {
+        Environment: api?.Meta?.Environment || api?.meta?.environment || "",
+        Machine: api?.Meta?.Machine || api?.meta?.machine || "",
+        StartedAtUtc: api?.Meta?.StartedAtUtc || api?.meta?.startedAtUtc || new Date().toISOString(),
+        UptimeSeconds: api?.Meta?.UptimeSeconds ?? api?.meta?.uptimeSeconds ?? 0,
+        Build: {
+          Version: api?.Meta?.Build?.Version || api?.meta?.build?.version || "",
+          Commit: api?.Meta?.Build?.Commit || api?.meta?.build?.commit || "",
+          BuildTimeUtc: api?.Meta?.Build?.BuildTimeUtc || api?.meta?.build?.buildTimeUtc || new Date().toISOString(),
+        },
+        Ef: {
+          Provider: api?.Meta?.Ef?.Provider || api?.meta?.ef?.provider || "",
+          Database: api?.Meta?.Ef?.Database || api?.meta?.ef?.database || "",
+          Server: api?.Meta?.Ef?.Server || api?.meta?.ef?.server || "",
+          AppliedCount: api?.Meta?.Ef?.AppliedCount ?? api?.meta?.ef?.appliedCount ?? 0,
+          PendingCount: api?.Meta?.Ef?.PendingCount ?? api?.meta?.ef?.pendingCount ?? 0,
+          LatestApplied: api?.Meta?.Ef?.LatestApplied || api?.meta?.ef?.latestApplied || "",
+          Pending: api?.Meta?.Ef?.Pending || api?.meta?.ef?.pending || [],
+        },
+      },
+    };
+  }
+
+  private mapSystemStatsFromApi(api: any): SystemStats {
+    return {
+      TotalHomes: api?.TotalHomes ?? api?.totalHomes ?? 0,
+      TotalRooms: api?.TotalRooms ?? api?.totalRooms ?? 0,
+      TotalDevices: api?.TotalDevices ?? api?.totalDevices ?? 0,
+      TotalUsers: api?.TotalUsers ?? api?.totalUsers ?? 0,
+      ActiveUsers: api?.ActiveUsers ?? api?.activeUsers ?? 0,
+      TotalAutomations: api?.TotalAutomations ?? api?.totalAutomations ?? 0,
+      TotalSensorDataRecords: api?.TotalSensorDataRecords ?? api?.totalSensorDataRecords ?? 0,
+      ActiveDevices: api?.ActiveDevices ?? api?.activeDevices ?? 0,
+      DeviceTypeDistribution: api?.DeviceTypeDistribution || api?.deviceTypeDistribution || {},
+    };
+  }
+
+  private mapDetailedHealthInfoFromApi(api: any): DetailedHealthInfo {
+    const healthInfo = this.mapHealthInfoFromApi(api);
+    return {
+      ...healthInfo,
+      Stats: this.mapSystemStatsFromApi(api?.Stats || api?.stats || {}),
+      HealthChecks: (api?.HealthChecks || api?.healthChecks || []).map((entry: any) => ({
+        Name: entry?.Name || entry?.name || "",
+        Status: entry?.Status || entry?.status || "Unknown",
+        Description: entry?.Description || entry?.description || "",
+        DurationMs: entry?.DurationMs ?? entry?.durationMs ?? 0,
+      })),
+    };
   }
 
   // Weather APIs (Template)
   async getWeatherForecast(): Promise<WeatherForecast[]> {
     return this.request<WeatherForecast[]>("/weatherforecast");
+  }
+
+  // Payment API Mappers - Convert PascalCase (backend) to camelCase (frontend)
+  private mapServicePackageFromApi(api: any): ServicePackage {
+    return {
+      packageId: api?.PackageId ?? api?.packageId ?? 0,
+      name: api?.Name || api?.name || "",
+      description: api?.Description || api?.description || "",
+      price: api?.Price ?? api?.price ?? 0,
+      durationInMonths: api?.DurationInMonths ?? api?.durationInMonths ?? 0,
+      isActive: api?.IsActive ?? api?.isActive ?? false,
+      createdAt: api?.CreatedAt || api?.createdAt || new Date().toISOString(),
+    };
+  }
+
+  private mapPaymentLinkResponseFromApi(api: any): PaymentLinkResponse {
+    return {
+      paymentId: api?.PaymentId ?? api?.paymentId ?? 0,
+      checkoutUrl: api?.CheckoutUrl || api?.checkoutUrl || "",
+      orderCode: api?.OrderCode || api?.orderCode || "",
+      amount: api?.Amount ?? api?.amount ?? 0,
+      description: api?.Description || api?.description || "",
+    };
+  }
+
+  private mapServicePaymentFromApi(api: any): ServicePayment {
+    // Status can be number (enum) or string
+    let status: PaymentStatus = "PENDING";
+    if (api?.Status !== undefined) {
+      if (typeof api.Status === "number") {
+        // Map number enum to string
+        const statusMap: Record<number, PaymentStatus> = {
+          0: "PENDING",
+          1: "PAID",
+          2: "FAILED",
+          3: "CANCELLED",
+        };
+        status = statusMap[api.Status] || api.Status;
+      } else {
+        status = api.Status.toUpperCase() as PaymentStatus;
+      }
+    } else if (api?.status) {
+      status = api.status.toUpperCase() as PaymentStatus;
+    }
+
+    return {
+      paymentId: api?.PaymentId ?? api?.paymentId ?? 0,
+      userId: api?.UserId ?? api?.userId ?? 0,
+      amount: api?.Amount ?? api?.amount ?? 0,
+      currency: api?.Currency || api?.currency || "VND",
+      method: api?.Method || api?.method || "PayOS",
+      status: status,
+      serviceStart: api?.ServiceStart || api?.serviceStart || new Date().toISOString(),
+      serviceEnd: api?.ServiceEnd || api?.serviceEnd || new Date().toISOString(),
+      transactionRef: api?.TransactionRef || api?.transactionRef || null,
+      createdAt: api?.CreatedAt || api?.createdAt || new Date().toISOString(),
+      packageId: api?.PackageId ?? api?.packageId ?? null,
+      packageName: api?.PackageName || api?.packageName || null,
+      description: api?.Description || api?.description || "",
+      durationInMonths: api?.DurationInMonths ?? api?.durationInMonths ?? 0,
+      checkoutUrl: api?.CheckoutUrl || api?.checkoutUrl || null,
+    };
+  }
+
+  private mapPaymentConfirmationFromApi(api: any): PaymentConfirmationResponse {
+    return {
+      isSuccess:
+        api?.IsSuccess ??
+        api?.Success ??
+        api?.success ??
+        (api?.Status === "PAID" || api?.status === "PAID"),
+      message: api?.Message || api?.message || api?.Description || api?.description || "",
+      serviceStatus: api?.ServiceStatus || api?.serviceStatus,
+      paymentId: api?.PaymentId ?? api?.paymentId,
+      errors: api?.Errors ?? api?.errors ?? null,
+    };
+  }
+
+  // Payment APIs (PayOS Integration) - Customer endpoints
+  async getServicePackages(): Promise<ServicePackage[]> {
+    const data = await this.request<any[]>("/Payment/packages");
+    return (data || []).map((pkg) => this.mapServicePackageFromApi(pkg));
+  }
+
+  async getServicePackage(packageId: number): Promise<ServicePackage> {
+    const data = await this.request<any>(`/Payment/packages/${packageId}`);
+    return this.mapServicePackageFromApi(data);
+  }
+
+  async createPaymentLink(request: CreatePaymentLinkRequest): Promise<PaymentLinkResponse> {
+    // Convert camelCase to PascalCase for backend
+    const payload: any = {};
+    if (request.packageId !== undefined) {
+      payload.PackageId = request.packageId;
+    }
+    if (request.existingPaymentId !== undefined) {
+      payload.ExistingPaymentId = request.existingPaymentId;
+    }
+    if (request.successUrl) {
+      payload.SuccessUrl = request.successUrl;
+    }
+    if (request.cancelUrl) {
+      payload.CancelUrl = request.cancelUrl;
+    }
+    if (request.returnUrl) {
+      payload.ReturnUrl = request.returnUrl;
+    }
+    if (request.paymentType) {
+      payload.PaymentType = request.paymentType;
+    }
+
+    const data = await this.request<any>("/Payment/create-link", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return this.mapPaymentLinkResponseFromApi(data);
+  }
+
+  async getMyPayments(): Promise<ServicePayment[]> {
+    const data = await this.request<any[]>("/Payment/my-payments");
+    return (data || []).map((payment) => this.mapServicePaymentFromApi(payment));
+  }
+
+  async getMyPaymentDetails(paymentId: number): Promise<ServicePayment> {
+    const data = await this.request<any>(`/Payment/my-payments/${paymentId}`);
+    return this.mapServicePaymentFromApi(data);
+  }
+
+  async confirmPaymentFromCallback(
+    payload: PayOSCallbackPayload
+  ): Promise<PaymentConfirmationResponse> {
+    // Payload keys come from PayOS query params, keep original casing
+    const data = await this.request<any>("/Payment/verify-success", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return this.mapPaymentConfirmationFromApi(data);
+  }
+
+  // Admin Payment APIs
+  async createCustomPaymentBill(request: CreateCustomPaymentBillRequest): Promise<ServicePayment> {
+    // Convert camelCase to PascalCase for backend
+    const payload = {
+      UserId: request.userId,
+      Amount: request.amount,
+      Description: request.description,
+      DurationInMonths: request.durationInMonths,
+    };
+
+    const data = await this.request<any>("/admin/payments/create-custom", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return this.mapServicePaymentFromApi(data);
+  }
+
+  async getAllPayments(): Promise<ServicePayment[]> {
+    const data = await this.request<any[]>("/admin/payments");
+    return (data || []).map((payment) => this.mapServicePaymentFromApi(payment));
+  }
+
+  async getPaymentDetails(paymentId: number): Promise<ServicePayment> {
+    const data = await this.request<any>(`/admin/payments/${paymentId}`);
+    return this.mapServicePaymentFromApi(data);
+  }
+
+  async getUserPayments(userId: number): Promise<ServicePayment[]> {
+    const data = await this.request<any[]>(`/admin/payments/user/${userId}`);
+    return (data || []).map((payment) => this.mapServicePaymentFromApi(payment));
+  }
+
+  async getAllPackages(): Promise<ServicePackage[]> {
+    const data = await this.request<any[]>("/admin/payments/packages");
+    return (data || []).map((pkg) => this.mapServicePackageFromApi(pkg));
+  }
+
+  // Support Request APIs (Yêu cầu hỗ trợ gói dịch vụ tùy chỉnh)
+  async createSupportRequest(
+    request: CreateSupportRequestRequest
+  ): Promise<SupportRequest> {
+    const payload = {
+      Title: request.title,
+      Content: request.content,
+    };
+
+    const data = await this.request<any>("/SupportRequests", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return this.mapSupportRequestFromApi(data);
+  }
+
+  async getMySupportRequests(): Promise<SupportRequest[]> {
+    const data = await this.request<any[]>("/SupportRequests/me");
+    return (data || []).map((req) => this.mapSupportRequestFromApi(req));
+  }
+
+  async getAllSupportRequests(status?: string): Promise<SupportRequest[]> {
+    const url = status
+      ? `/SupportRequests?status=${encodeURIComponent(status)}`
+      : "/SupportRequests";
+    const data = await this.request<any[]>(url);
+    return (data || []).map((req) => this.mapSupportRequestFromApi(req));
+  }
+
+  async getSupportRequest(requestId: number): Promise<SupportRequest> {
+    const data = await this.request<any>(`/SupportRequests/${requestId}`);
+    return this.mapSupportRequestFromApi(data);
+  }
+
+  async updateSupportRequestStatus(
+    requestId: number,
+    update: UpdateSupportRequestStatusRequest
+  ): Promise<SupportRequest> {
+    const payload = {
+      Status: update.status,
+    };
+
+    const data = await this.request<any>(
+      `/SupportRequests/${requestId}/status`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }
+    );
+    return this.mapSupportRequestFromApi(data);
+  }
+
+  private mapSupportRequestFromApi(api: any): SupportRequest {
+    return {
+      requestId: api?.RequestId ?? api?.requestId ?? api?.id ?? 0,
+      userId: api?.UserId ?? api?.userId ?? 0,
+      title: api?.Title ?? api?.title ?? "",
+      content: api?.Content ?? api?.content ?? "",
+      supportStatus:
+        api?.SupportStatus ?? api?.supportStatus ?? api?.status ?? "PENDING",
+      createdAt: api?.CreatedAt ?? api?.createdAt ?? new Date().toISOString(),
+      resolvedAt: api?.ResolvedAt ?? api?.resolvedAt ?? null,
+      // Additional fields (populated when admin fetches with user info)
+      userName: api?.UserName ?? api?.userName ?? api?.FullName ?? api?.fullName,
+      userEmail: api?.UserEmail ?? api?.userEmail ?? api?.Email ?? api?.email,
+      userPhone:
+        api?.UserPhone ?? api?.userPhone ?? api?.PhoneNumber ?? api?.phoneNumber,
+    };
   }
 }
 

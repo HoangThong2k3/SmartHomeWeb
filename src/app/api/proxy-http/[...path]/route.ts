@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Try HTTP first, then HTTPS if needed
+// Danh sách các base URL backend để thử lần lượt
+// Ưu tiên lấy từ biến môi trường NEXT_PUBLIC_API_URL
+// Ví dụ: NEXT_PUBLIC_API_URL=https://smarthomes-fdbehwcuaaexaggv.eastasia-01.azurewebsites.net/api
+const ENV_BACKEND_URL = process.env.NEXT_PUBLIC_API_URL;
+
 const BACKEND_URLS = [
-  "https://smarthome-bnauatedb7bucncy.eastasia-01.azurewebsites.net/api",
+  ...(ENV_BACKEND_URL ? [ENV_BACKEND_URL] : []),
+  // Fallbacks nếu env chưa được set
+  "https://smarthomes-fdbehwcuaaexaggv.eastasia-01.azurewebsites.net/api",
+  "https://smarthomes-fdbehwcuaaexaggv.eastasia-01.azurewebsites.net",
 ];
 
 export async function GET(request: NextRequest) {

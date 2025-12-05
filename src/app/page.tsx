@@ -23,14 +23,33 @@ export default function Home() {
           <Link href="/quote" className="inline-block px-6 py-3 rounded-lg bg-blue-600 text-white shadow-md font-semibold text-lg hover:bg-blue-700 transition">Nhận báo giá miễn phí</Link>
         </div>
         <div className="flex-1 flex justify-center items-center">
-          <Image src="/globe.svg" width={340} height={340} alt="Smart camera" className="rounded-2xl drop-shadow-2xl border border-gray-100 bg-blue-100" />
+          <div className="relative w-full max-w-md aspect-square rounded-2xl overflow-hidden shadow-2xl border-4 border-blue-100 group hover:shadow-blue-200/50 transition-all">
+            <Image 
+              src="https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=80&auto=format&fit=crop" 
+              alt="Smart Home System" 
+              fill
+              className="object-cover group-hover:scale-105 transition-transform duration-500"
+              priority
+              sizes="(max-width: 768px) 100vw, 50vw"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-blue-900/20 to-transparent"></div>
+          </div>
         </div>
       </section>
 
       {/* IoT SMART HOME SYSTEM SECTION */}
       <section className="max-w-7xl mx-auto px-6 py-10 flex flex-col md:flex-row-reverse gap-12 items-center">
         <div className="flex-1">
-          <Image src="/window.svg" width={370} height={270} alt="IoT Smart Home System" className="rounded-xl shadow-lg border border-gray-100" />
+          <div className="relative w-full aspect-[4/3] rounded-xl overflow-hidden shadow-xl border-2 border-gray-200 group hover:shadow-2xl transition-shadow">
+            <Image 
+              src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80&auto=format&fit=crop" 
+              alt="IoT Smart Home Control Panel" 
+              fill
+              className="object-cover group-hover:scale-105 transition-transform duration-300"
+              sizes="(max-width: 768px) 100vw, 50vw"
+            />
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-600/10 to-purple-600/10"></div>
+          </div>
         </div>
         <div className="flex-1">
           <div className="flex gap-3 items-center mb-3">
@@ -58,8 +77,17 @@ export default function Home() {
       {/* VIDEO DOORBELL SECTION */}
       <section className="max-w-7xl mx-auto px-6 py-10 flex flex-col md:flex-row gap-12 items-center">
         <div className="flex-1">
-          <Image src="/file.svg" width={350} height={220} alt="Video Doorbell" className="rounded-xl shadow-lg border border-gray-100" />
-                  </div>
+          <div className="relative w-full aspect-[16/10] rounded-xl overflow-hidden shadow-xl border-2 border-gray-200 group hover:shadow-2xl transition-shadow">
+            <Image 
+              src="https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=800&q=80&auto=format&fit=crop" 
+              alt="Smart Video Doorbell" 
+              fill
+              className="object-cover group-hover:scale-105 transition-transform duration-300"
+              sizes="(max-width: 768px) 100vw, 50vw"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-gray-900/30 to-transparent"></div>
+          </div>
+        </div>
         <div className="flex-1">
           <div className="flex gap-3 items-center mb-3">
             <span className="bg-blue-100 text-blue-700 rounded-full p-2 text-xl"><span role="img" aria-label="bell">🔔</span></span>

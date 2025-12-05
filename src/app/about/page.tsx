@@ -11,7 +11,7 @@ export default function AboutPage() {
         <div className="max-w-7xl mx-auto px-6">
           <h2 className="text-4xl md:text-5xl font-bold mb-4 text-center">Về SmartHome</h2>
           <p className="text-xl text-gray-300 text-center mb-16">
-            Bảo vệ các gia đình Việt Nam bằng giải pháp an ninh nhà thông minh tiên tiến từ năm 2010
+            Bảo vệ các gia đình Việt Nam bằng giải pháp an ninh nhà thông minh tiên tiến từ năm 2025
           </p>
 
           {/* Mission & Vision */}

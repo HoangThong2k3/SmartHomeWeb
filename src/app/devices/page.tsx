@@ -3,8 +3,10 @@
 import React, { useState, useEffect } from "react";
 import Layout from "@/components/layout/Layout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { ServiceGuard } from "@/components/auth/ServiceGuard";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiService } from "@/services/api";
+import { useServiceAccess } from "@/hooks/useServiceAccess";
 import { Device, Room, Home } from "@/types";
 import HomeSelector from "@/components/ui/HomeSelector";
 import {
@@ -20,6 +22,15 @@ import {
 
 export default function DevicesPage() {
   const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const isCustomer = user?.role === "customer";
+  const [editMode, setEditMode] = useState<"admin" | "customer">(
+    isAdmin ? "admin" : "customer"
+  );
+  const {
+    isActive: canUseService,
+    isLoading: isServiceLoading,
+  } = useServiceAccess();
   const [devices, setDevices] = useState<Device[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [homes, setHomes] = useState<Home[]>([]);
@@ -29,19 +40,34 @@ export default function DevicesPage() {
   const [editingDevice, setEditingDevice] = useState<Device | null>(null);
 
   useEffect(() => {
+    setEditMode(isAdmin ? "admin" : "customer");
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (isServiceLoading) return;
+    if (!canUseService) {
+      setIsLoading(false);
+      return;
+    }
     fetchData();
-  }, [user]);
+  }, [user, canUseService, isServiceLoading]);
 
   const fetchData = async () => {
     try {
       setIsLoading(true);
       setError(null);
-      console.log("[DevicesPage] Fetching data for user:", user?.id);
+      console.log("[DevicesPage] Fetching data for user:", user?.id, "role:", user?.role);
 
       // Fetch homes first
       let userHomes: Home[] = [];
-      if (user?.id) {
-        userHomes = await apiService.getHomesByOwner(user.id);
+      if (isAdmin) {
+        // Admin: xem tất cả homes trong hệ thống để quản lý platform (giống như homes/page.tsx và rooms/page.tsx)
+        userHomes = await apiService.getAllHomes();
+        console.log("[DevicesPage] Admin fetched all homes:", userHomes.length);
+      } else if (user?.id) {
+        // Customer: chỉ homes của chính mình
+        userHomes = await apiService.getMyHomes();
+        console.log("[DevicesPage] Customer fetched my homes:", userHomes.length);
       } else {
         console.warn("[DevicesPage] No user ID available. Cannot fetch homes.");
         userHomes = [];
@@ -97,6 +123,11 @@ export default function DevicesPage() {
   };
 
   const handleCreateDevice = async (deviceData: any) => {
+    if (!isAdmin) {
+      setError("Chỉ quản trị viên mới có thể thêm thiết bị.");
+      setTimeout(() => setError(null), 4000);
+      return;
+    }
     try {
       setError(null);
       console.log("[DevicesPage] Creating device with data:", deviceData);
@@ -213,6 +244,11 @@ export default function DevicesPage() {
   };
 
   const handleDeleteDevice = async (id: string) => {
+    if (!isAdmin) {
+      setError("Chỉ quản trị viên mới có thể xóa thiết bị.");
+      setTimeout(() => setError(null), 4000);
+      return;
+    }
     if (!confirm("Are you sure you want to delete this device?")) return;
     try {
       setError(null);
@@ -284,7 +320,8 @@ export default function DevicesPage() {
 
   return (
     <ProtectedRoute>
-      <Layout>
+      <ServiceGuard>
+        <Layout>
         <div className="mb-8">
           <div className="flex justify-between items-center">
             <div>
@@ -293,13 +330,20 @@ export default function DevicesPage() {
                 Manage your smart home devices
               </p>
             </div>
-            <button
-              onClick={() => setShowCreateForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Device
-            </button>
+            {isAdmin ? (
+              <button
+                onClick={() => setShowCreateForm(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Device
+              </button>
+            ) : (
+              <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-md text-sm font-medium">
+                Thiết bị được đội ngũ kỹ thuật cài đặt. Bạn chỉ có thể điều khiển
+                trạng thái thiết bị.
+              </div>
+            )}
           </div>
         </div>
 
@@ -316,14 +360,18 @@ export default function DevicesPage() {
               No devices found
             </h3>
             <p className="text-gray-500 mb-4">
-              Get started by adding your first smart device.
+              {isCustomer
+                ? "Thiết bị sẽ được kích hoạt sau khi đội ngũ kỹ thuật bàn giao."
+                : "Hãy sử dụng nút Add Device để cài đặt thiết bị cho khách hàng."}
             </p>
-            <button
-              onClick={() => setShowCreateForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-            >
-              Add Device
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setShowCreateForm(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+              >
+                Add Device
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -357,18 +405,42 @@ export default function DevicesPage() {
                     </div>
                   </div>
                   <div className="flex space-x-2">
-                    <button
-                      onClick={() => setEditingDevice(device)}
-                      className="text-blue-600 hover:text-blue-800"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteDevice(device.id)}
-                      className="text-red-600 hover:text-red-800"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {isCustomer && (
+                      <button
+                        onClick={() => {
+                          setEditMode("customer");
+                          setEditingDevice(device);
+                        }}
+                        className="text-blue-600 hover:text-blue-800 flex items-center"
+                        title="Điều khiển thiết bị"
+                      >
+                        <Power className="w-4 h-4" />
+                        <span className="ml-1 text-xs font-semibold">
+                          Control
+                        </span>
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <>
+                        <button
+                          onClick={() => {
+                            setEditMode("admin");
+                            setEditingDevice(device);
+                          }}
+                          className="text-blue-600 hover:text-blue-800"
+                          title="Configure device"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteDevice(device.id)}
+                          className="text-red-600 hover:text-red-800"
+                          title="Remove device"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -376,7 +448,7 @@ export default function DevicesPage() {
           </div>
         )}
 
-        {showCreateForm && (
+        {isAdmin && showCreateForm && (
           <CreateDeviceForm
             rooms={rooms}
             homes={homes}
@@ -390,11 +462,13 @@ export default function DevicesPage() {
             device={editingDevice}
             rooms={rooms}
             homes={homes}
+            mode={editMode}
             onSubmit={(data) => handleUpdateDevice(editingDevice.id, data)}
             onCancel={() => setEditingDevice(null)}
           />
         )}
-      </Layout>
+        </Layout>
+      </ServiceGuard>
     </ProtectedRoute>
   );
 }
@@ -415,6 +489,7 @@ function CreateDeviceForm({
     deviceType: "LED",
     roomId: "",
     homeId: "",
+    currentState: "",
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -496,6 +571,38 @@ function CreateDeviceForm({
               <option value="MQ135">MQ135</option>
             </select>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Current State
+            </label>
+            <input
+              type="text"
+              value={formData.currentState || ""}
+              onChange={(e) =>
+                setFormData({ ...formData, currentState: e.target.value })
+              }
+              placeholder="Ví dụ: ON, OFF, OPEN, CLOSE"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <div className="flex flex-wrap gap-2 mt-2">
+              {["ON", "OFF", "OPEN", "CLOSE"].map((state) => (
+                <button
+                  type="button"
+                  key={state}
+                  onClick={() =>
+                    setFormData({ ...formData, currentState: state })
+                  }
+                  className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+                    formData.currentState === state
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-gray-700 border-gray-300"
+                  }`}
+                >
+                  {state}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex space-x-3 pt-4">
             <button
               type="submit"
@@ -523,13 +630,16 @@ function EditDeviceForm({
   homes,
   onSubmit,
   onCancel,
+  mode = "customer",
 }: {
   device: Device;
   rooms: Room[];
   homes: Home[];
   onSubmit: (data: any) => void;
   onCancel: () => void;
+  mode?: "admin" | "customer";
 }) {
+  const isAdminMode = mode === "admin";
   // Convert device.type (lowercase) to deviceType (uppercase) for dropdown
   const convertTypeToDeviceType = (type: string): string => {
     if (!type) return "LED";
@@ -545,12 +655,19 @@ function EditDeviceForm({
     return room?.homeId || (device as any).homeId || "";
   };
 
+  const deriveCurrentState = () =>
+    (device as any).currentState ||
+    (device as any).CurrentState ||
+    (device as any).state ||
+    "";
+
   const [formData, setFormData] = useState({
     name: device.name,
     deviceType:
       (device as any).deviceType || convertTypeToDeviceType(device.type),
     roomId: device.roomId,
     homeId: findHomeIdFromRoom(device.roomId),
+    currentState: deriveCurrentState(),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -558,10 +675,41 @@ function EditDeviceForm({
     onSubmit(formData);
   };
 
+  const renderHomeSelector = () => {
+    if (isAdminMode) {
+      return (
+        <HomeSelector
+          homes={homes}
+          value={formData.homeId}
+          onChange={(homeId) =>
+            setFormData({ ...formData, homeId, roomId: "" })
+          }
+          required
+        />
+      );
+    }
+
+    const homeName =
+      homes.find((h) => h.id === formData.homeId)?.name || "Ngôi nhà của tôi";
+
+    return (
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Home
+        </label>
+        <div className="px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-600">
+          {homeName}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-md">
-        <h2 className="text-xl font-semibold mb-4">Edit Device</h2>
+        <h2 className="text-xl font-semibold mb-4">
+          {isAdminMode ? "Configure Device" : "Control Device"}
+        </h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -573,18 +721,12 @@ function EditDeviceForm({
               onChange={(e) =>
                 setFormData({ ...formData, name: e.target.value })
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
               required
+              disabled={!isAdminMode}
             />
           </div>
-          <HomeSelector
-            homes={homes}
-            value={formData.homeId}
-            onChange={(homeId) =>
-              setFormData({ ...formData, homeId, roomId: "" })
-            }
-            required
-          />
+          {renderHomeSelector()}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Room
@@ -594,9 +736,9 @@ function EditDeviceForm({
               onChange={(e) =>
                 setFormData({ ...formData, roomId: e.target.value })
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
               required
-              disabled={!formData.homeId}
+              disabled={!formData.homeId || !isAdminMode}
             >
               {rooms
                 .filter((room) => room.homeId === formData.homeId)
@@ -616,7 +758,8 @@ function EditDeviceForm({
               onChange={(e) =>
                 setFormData({ ...formData, deviceType: e.target.value })
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+              disabled={!isAdminMode}
             >
               <option value="SERVO">Servo</option>
               <option value="LED">LED</option>

@@ -21,11 +21,12 @@ export default function HealthPage() {
     
     const newHealthData: any = { live: null, ready: null, info: null };
     const errors: string[] = [];
+    const extractStatus = (obj: any) => obj?.Status ?? obj?.status ?? "Unknown";
 
     // Fetch Live status (public, no auth required)
     try {
       const live = await apiService.getHealthLive();
-      console.log('[HealthPage] Live status received:', live?.status);
+      console.log('[HealthPage] Live status received:', extractStatus(live));
       newHealthData.live = live;
     } catch (err: any) {
       console.error('[HealthPage] Error fetching live status:', err);
@@ -36,7 +37,7 @@ export default function HealthPage() {
     if (user?.role === "admin") {
       try {
         const ready = await apiService.getHealthReady();
-        console.log('[HealthPage] Ready status received:', ready?.status);
+        console.log('[HealthPage] Ready status received:', extractStatus(ready));
         newHealthData.ready = ready;
       } catch (err: any) {
         console.error('[HealthPage] Error fetching ready status:', err);
@@ -51,7 +52,10 @@ export default function HealthPage() {
     // Fetch System Info
     try {
       const info = await apiService.getHealthInfo();
-      console.log('[HealthPage] System info received:', info?.meta?.environment);
+      const normalizedMeta = {
+        environment: info?.Meta?.Environment ?? (info as any)?.meta?.environment,
+      };
+      console.log('[HealthPage] System info received:', normalizedMeta.environment);
       newHealthData.info = info;
     } catch (err: any) {
       console.error('[HealthPage] Error fetching system info:', err);
@@ -86,6 +90,9 @@ export default function HealthPage() {
     return () => clearInterval(interval);
   }, [user]);
 
+  const getStatusValue = (statusObj: any) =>
+    statusObj?.Status ?? statusObj?.status ?? "Unknown";
+
   const getStatusIcon = (status: string) => {
     switch (status?.toLowerCase()) {
       case "healthy":
@@ -119,10 +126,60 @@ export default function HealthPage() {
     return `${days}d ${hours}h ${minutes}m`;
   };
 
+  // Normalize meta casing between backend PascalCase and possible camelCase
+  const normalizeMeta = (meta: any) => {
+    if (!meta) return null;
+    const source = meta.Meta ?? meta.meta ?? meta;
+    if (!source) return null;
+
+    return {
+      environment: source.Environment ?? source.environment ?? "",
+      machine: source.Machine ?? source.machine ?? "",
+      startedAtUtc: source.StartedAtUtc ?? source.startedAtUtc ?? "",
+      uptimeSeconds: source.UptimeSeconds ?? source.uptimeSeconds,
+      build:
+        source.Build || source.build
+          ? {
+              version: source.Build?.Version ?? source.build?.version ?? "",
+              commit: source.Build?.Commit ?? source.build?.commit ?? "",
+              buildTimeUtc:
+                source.Build?.BuildTimeUtc ??
+                source.build?.buildTimeUtc ??
+                undefined,
+            }
+          : undefined,
+      ef:
+        source.Ef || source.ef
+          ? {
+              provider: source.Ef?.Provider ?? source.ef?.provider ?? "",
+              database: source.Ef?.Database ?? source.ef?.database ?? "",
+              server: source.Ef?.Server ?? source.ef?.server ?? "",
+              appliedCount:
+                source.Ef?.AppliedCount ?? source.ef?.appliedCount ?? 0,
+              pendingCount:
+                source.Ef?.PendingCount ?? source.ef?.pendingCount ?? 0,
+              latestApplied:
+                source.Ef?.LatestApplied ?? source.ef?.latestApplied ?? "",
+              pending: source.Ef?.Pending ?? source.ef?.pending ?? [],
+            }
+          : undefined,
+    };
+  };
+
   // Get best available meta data (priority: info > ready > live)
   const getMetaData = () => {
-    return healthData?.info?.meta || healthData?.ready?.meta || healthData?.live?.meta || null;
+    const rawMeta =
+      healthData?.info?.Meta ??
+      healthData?.info?.meta ??
+      healthData?.ready?.Meta ??
+      healthData?.ready?.meta ??
+      healthData?.live?.Meta ??
+      healthData?.live?.meta ??
+      null;
+    return normalizeMeta(rawMeta);
   };
+
+  const meta = getMetaData();
 
   if (isLoading && !healthData) {
     return (
@@ -191,9 +248,9 @@ export default function HealthPage() {
                   <div className="flex-1">
                     <div className="font-medium text-gray-900 mb-1">Live Status</div>
                     <div className="flex items-center">
-                      {getStatusIcon(healthData.live?.status || "Unknown")}
-                      <span className={`ml-2 text-sm px-3 py-1 rounded-full font-medium ${getStatusColor(healthData.live?.status || "Unknown")}`}>
-                        {healthData.live?.status || "Unknown"}
+                      {getStatusIcon(getStatusValue(healthData.live))}
+                      <span className={`ml-2 text-sm px-3 py-1 rounded-full font-medium ${getStatusColor(getStatusValue(healthData.live))}`}>
+                        {getStatusValue(healthData.live)}
                       </span>
                     </div>
                     {healthData.live?.checkedAtUtc && (
@@ -209,11 +266,11 @@ export default function HealthPage() {
                   <div className="flex-1">
                     <div className="font-medium text-gray-900 mb-1">System Info</div>
                     <div className="text-sm text-gray-700">
-                      {getMetaData()?.environment || "Unknown"}
+                      {meta?.environment || "Unknown"}
                     </div>
-                    {getMetaData()?.uptimeSeconds !== undefined && (
+                    {meta?.uptimeSeconds !== undefined && (
                       <div className="text-xs text-gray-500 mt-1">
-                        Uptime: {formatUptime(getMetaData()!.uptimeSeconds)}
+                        Uptime: {formatUptime(meta.uptimeSeconds)}
                       </div>
                     )}
                   </div>
@@ -225,9 +282,9 @@ export default function HealthPage() {
                     <div className="flex-1">
                       <div className="font-medium text-gray-900 mb-1">Ready Status</div>
                       <div className="flex items-center">
-                        {getStatusIcon(healthData.ready?.status || "Unknown")}
-                        <span className={`ml-2 text-sm px-3 py-1 rounded-full font-medium ${getStatusColor(healthData.ready?.status || "Unknown")}`}>
-                          {healthData.ready?.status || "Unknown"}
+                        {getStatusIcon(getStatusValue(healthData.ready))}
+                        <span className={`ml-2 text-sm px-3 py-1 rounded-full font-medium ${getStatusColor(getStatusValue(healthData.ready))}`}>
+                          {getStatusValue(healthData.ready)}
                         </span>
                       </div>
                       {healthData.ready?.checkedAtUtc && (
@@ -249,14 +306,14 @@ export default function HealthPage() {
                   {healthData.live.entries.map((entry: any, index: number) => (
                     <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100">
                       <div className="flex items-center flex-1">
-                        {getStatusIcon(entry.status || "Unknown")}
+                        {getStatusIcon(entry.Status || entry.status || "Unknown")}
                         <div className="ml-3 flex-1">
-                          <div className="font-medium text-gray-900">{entry.name || `Check ${index + 1}`}</div>
-                          <div className="text-sm text-gray-600">{entry.description || "No description"}</div>
+                          <div className="font-medium text-gray-900">{entry.name || entry.Name || `Check ${index + 1}`}</div>
+                          <div className="text-sm text-gray-600">{entry.description || entry.Description || "No description"}</div>
                         </div>
                       </div>
                       <div className="text-sm text-gray-500 ml-4">
-                        {entry.durationMs !== undefined ? `${entry.durationMs}ms` : "N/A"}
+                        {entry.durationMs !== undefined ? `${entry.durationMs}ms` : entry.DurationMs !== undefined ? `${entry.DurationMs}ms` : "N/A"}
                       </div>
                     </div>
                   ))}
@@ -272,14 +329,14 @@ export default function HealthPage() {
                   {healthData.ready.entries.map((entry: any, index: number) => (
                     <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100">
                       <div className="flex items-center flex-1">
-                        {getStatusIcon(entry.status || "Unknown")}
+                        {getStatusIcon(entry.Status || entry.status || "Unknown")}
                         <div className="ml-3 flex-1">
-                          <div className="font-medium text-gray-900">{entry.name || `Check ${index + 1}`}</div>
-                          <div className="text-sm text-gray-600">{entry.description || "No description"}</div>
+                          <div className="font-medium text-gray-900">{entry.name || entry.Name || `Check ${index + 1}`}</div>
+                          <div className="text-sm text-gray-600">{entry.description || entry.Description || "No description"}</div>
                         </div>
                       </div>
                       <div className="text-sm text-gray-500 ml-4">
-                        {entry.durationMs !== undefined ? `${entry.durationMs}ms` : "N/A"}
+                        {entry.durationMs !== undefined ? `${entry.durationMs}ms` : entry.DurationMs !== undefined ? `${entry.DurationMs}ms` : "N/A"}
                       </div>
                     </div>
                   ))}
@@ -288,7 +345,7 @@ export default function HealthPage() {
             )}
 
             {/* System Information */}
-            {getMetaData() && (
+            {meta && (
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold mb-4">System Information</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -297,50 +354,50 @@ export default function HealthPage() {
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between py-1 border-b border-gray-100">
                         <span className="text-gray-600">Environment:</span>
-                        <span className="font-medium text-gray-900">{getMetaData()!.environment || "N/A"}</span>
+                        <span className="font-medium text-gray-900">{meta.environment || "N/A"}</span>
                       </div>
                       <div className="flex justify-between py-1 border-b border-gray-100">
                         <span className="text-gray-600">Machine:</span>
-                        <span className="font-medium text-gray-900">{getMetaData()!.machine || "N/A"}</span>
+                        <span className="font-medium text-gray-900">{meta.machine || "N/A"}</span>
                       </div>
                       <div className="flex justify-between py-1 border-b border-gray-100">
                         <span className="text-gray-600">Uptime:</span>
                         <span className="font-medium text-gray-900">
-                          {getMetaData()!.uptimeSeconds !== undefined 
-                            ? formatUptime(getMetaData()!.uptimeSeconds) 
+                          {meta.uptimeSeconds !== undefined 
+                            ? formatUptime(meta.uptimeSeconds) 
                             : "N/A"}
                         </span>
                       </div>
-                      {getMetaData()!.startedAtUtc && (
+                      {meta.startedAtUtc && (
                         <div className="flex justify-between py-1">
                           <span className="text-gray-600">Started At:</span>
                           <span className="font-medium text-gray-900">
-                            {new Date(getMetaData()!.startedAtUtc).toLocaleString()}
+                            {new Date(meta.startedAtUtc).toLocaleString()}
                           </span>
                         </div>
                       )}
                     </div>
                   </div>
                   
-                  {getMetaData()!.build && (
+                  {meta.build && (
                     <div>
                       <h4 className="font-medium text-gray-900 mb-3">Build Information</h4>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between py-1 border-b border-gray-100">
                           <span className="text-gray-600">Version:</span>
-                          <span className="font-medium text-gray-900">{getMetaData()!.build.version || "N/A"}</span>
+                          <span className="font-medium text-gray-900">{meta.build?.version || "N/A"}</span>
                         </div>
-                        {getMetaData()!.build.commit && (
+                        {meta.build?.commit && (
                           <div className="flex justify-between py-1 border-b border-gray-100">
                             <span className="text-gray-600">Commit:</span>
-                            <span className="font-medium font-mono text-xs text-gray-900">{getMetaData()!.build.commit}</span>
+                            <span className="font-medium font-mono text-xs text-gray-900">{meta.build.commit}</span>
                           </div>
                         )}
-                        {getMetaData()!.build.buildTimeUtc && (
+                        {meta.build?.buildTimeUtc && (
                           <div className="flex justify-between py-1">
                             <span className="text-gray-600">Build Time:</span>
                             <span className="font-medium text-gray-900">
-                              {new Date(getMetaData()!.build.buildTimeUtc).toLocaleString()}
+                              {new Date(meta.build.buildTimeUtc).toLocaleString()}
                             </span>
                           </div>
                         )}
@@ -352,7 +409,7 @@ export default function HealthPage() {
             )}
 
             {/* Database Information */}
-            {getMetaData()?.ef && (
+            {meta?.ef && (
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold mb-4">Database Information</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -361,15 +418,15 @@ export default function HealthPage() {
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between py-1 border-b border-gray-100">
                         <span className="text-gray-600">Provider:</span>
-                        <span className="font-medium text-gray-900">{getMetaData()!.ef.provider || "N/A"}</span>
+                        <span className="font-medium text-gray-900">{meta.ef?.provider || "N/A"}</span>
                       </div>
                       <div className="flex justify-between py-1 border-b border-gray-100">
                         <span className="text-gray-600">Database:</span>
-                        <span className="font-medium text-gray-900">{getMetaData()!.ef.database || "N/A"}</span>
+                        <span className="font-medium text-gray-900">{meta.ef?.database || "N/A"}</span>
                       </div>
                       <div className="flex justify-between py-1">
                         <span className="text-gray-600">Server:</span>
-                        <span className="font-medium text-gray-900">{getMetaData()!.ef.server || "N/A"}</span>
+                        <span className="font-medium text-gray-900">{meta.ef?.server || "N/A"}</span>
                       </div>
                     </div>
                   </div>
@@ -379,18 +436,18 @@ export default function HealthPage() {
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between py-1 border-b border-gray-100">
                         <span className="text-gray-600">Applied:</span>
-                        <span className="font-medium text-gray-900">{getMetaData()!.ef.appliedCount ?? "N/A"}</span>
+                        <span className="font-medium text-gray-900">{meta.ef?.appliedCount ?? "N/A"}</span>
                       </div>
                       <div className="flex justify-between py-1 border-b border-gray-100">
                         <span className="text-gray-600">Pending:</span>
-                        <span className={`font-medium ${(getMetaData()!.ef.pendingCount ?? 0) > 0 ? 'text-yellow-600' : 'text-gray-900'}`}>
-                          {getMetaData()!.ef.pendingCount ?? "N/A"}
+                        <span className={`font-medium ${(meta.ef?.pendingCount ?? 0) > 0 ? 'text-yellow-600' : 'text-gray-900'}`}>
+                          {meta.ef?.pendingCount ?? "N/A"}
                         </span>
                       </div>
-                      {getMetaData()!.ef.latestApplied && (
+                      {meta.ef?.latestApplied && (
                         <div className="flex justify-between py-1">
                           <span className="text-gray-600">Latest:</span>
-                          <span className="font-medium font-mono text-xs text-gray-900">{getMetaData()!.ef.latestApplied}</span>
+                          <span className="font-medium font-mono text-xs text-gray-900">{meta.ef.latestApplied}</span>
                         </div>
                       )}
                     </div>

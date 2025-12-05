@@ -3,8 +3,10 @@
 import React, { useState, useEffect } from "react";
 import Layout from "@/components/layout/Layout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { ServiceGuard } from "@/components/auth/ServiceGuard";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiService } from "@/services/api";
+import { useServiceAccess } from "@/hooks/useServiceAccess";
 import { Automation, Home } from "@/types";
 import {
   Zap,
@@ -55,6 +57,11 @@ function normalizeAutomationJson(jsonString: string): string {
 
 export default function AutomationsPage() {
   const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const {
+    isActive: canUseService,
+    isLoading: isServiceLoading,
+  } = useServiceAccess();
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [homes, setHomes] = useState<Home[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -65,19 +72,45 @@ export default function AutomationsPage() {
   );
 
   useEffect(() => {
+    if (isServiceLoading) return;
+
+    if (!canUseService) {
+      setIsLoading(false);
+      return;
+    }
+
     fetchData();
-  }, [user]);
+  }, [user, canUseService, isServiceLoading]);
 
   const fetchData = async () => {
     try {
       setIsLoading(true);
       setError(null);
-      console.log("[AutomationsPage] Fetching data for user:", user?.id);
+      console.log("[AutomationsPage] Fetching data for user:", user?.id, "role:", user?.role);
 
+      // Admin không thể xem automation của customer (Privacy Wall)
+      // Admin chỉ có thể xem automation trong nhà của chính mình (nếu có)
+      // Customer chỉ có thể xem automation trong nhà của chính mình
+      
       // Fetch homes first
+      // Admin không thể xem homes của customer (Privacy Wall)
+      // Admin chỉ có thể xem automation trong nhà của chính mình (nếu có)
       let userHomes: Home[] = [];
-      if (user?.id) {
-        userHomes = await apiService.getHomesByOwner(user.id);
+      if (isAdmin) {
+        // Admin không gọi getMyHomes() vì API này chỉ dành cho Customer
+        // Admin có thể có home riêng nhưng cần API khác để lấy
+        // Tạm thời để trống, Admin sẽ thấy thông báo phù hợp
+        console.log("[AutomationsPage] Admin detected - skipping getMyHomes() due to Privacy Wall");
+        userHomes = [];
+      } else if (user?.id) {
+        // Chỉ Customer mới gọi getMyHomes()
+        try {
+          userHomes = await apiService.getMyHomes();
+        } catch (err: any) {
+          // Nếu bị lỗi, vẫn tiếp tục với mảng rỗng
+          console.warn("[AutomationsPage] Could not fetch homes:", err?.message || err);
+          userHomes = [];
+        }
       } else {
         console.warn(
           "[AutomationsPage] No user ID available. Cannot fetch homes."
@@ -86,6 +119,17 @@ export default function AutomationsPage() {
       }
       console.log("[AutomationsPage] Found homes:", userHomes.length);
       setHomes(userHomes);
+
+      // Nếu không có home, không fetch automations
+      if (userHomes.length === 0) {
+        setAutomations([]);
+        if (isAdmin) {
+          setError("Admin không thể xem automation của khách hàng (Privacy Wall). Admin chỉ có thể xem automation trong nhà của chính mình.");
+        } else {
+          setError("Bạn chưa có nhà nào. Vui lòng liên hệ admin để được cài đặt hệ thống.");
+        }
+        return;
+      }
 
       // Fetch automations for each home
       const allAutomations: Automation[] = [];
@@ -99,10 +143,20 @@ export default function AutomationsPage() {
             `[AutomationsPage] Found ${homeAutomations.length} automations for home ${home.id}`
           );
         } catch (err: any) {
-          console.error(
-            `[AutomationsPage] Could not fetch automations for home ${home.id}:`,
-            err?.message || err
-          );
+          // Nếu bị 403 Forbidden (Privacy Wall), log warning nhưng không throw error
+          if (err?.message?.includes("403") || err?.message?.includes("Forbidden")) {
+            console.warn(
+              `[AutomationsPage] Privacy Wall: Cannot fetch automations for home ${home.id} (Forbidden)`
+            );
+            if (isAdmin) {
+              setError("Admin không thể xem automation của khách hàng (Privacy Wall).");
+            }
+          } else {
+            console.error(
+              `[AutomationsPage] Could not fetch automations for home ${home.id}:`,
+              err?.message || err
+            );
+          }
         }
       }
       setAutomations(allAutomations);
@@ -380,22 +434,28 @@ export default function AutomationsPage() {
     return home?.name || "Unknown Home";
   };
 
+  // Không chặn Admin hoàn toàn - Admin có thể xem automation trong nhà của chính mình (nếu có)
+  // Nhưng Admin không thể xem/sửa automation của customer (Privacy Wall được xử lý ở backend)
+
   if (isLoading) {
     return (
       <ProtectedRoute>
-        <Layout>
-          <div className="flex items-center justify-center h-64">
+        <ServiceGuard>
+          <Layout>
+            <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
-        </Layout>
+            </div>
+          </Layout>
+        </ServiceGuard>
       </ProtectedRoute>
     );
   }
 
   return (
     <ProtectedRoute>
-      <Layout>
-        <div className="mb-8">
+      <ServiceGuard>
+        <Layout>
+          <div className="mb-8">
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Automations</h1>
@@ -403,9 +463,11 @@ export default function AutomationsPage() {
                 Manage your smart home automations
               </p>
             </div>
+            {/* Customer có thể tạo automation, Admin chỉ tạo được trong nhà của chính mình */}
             <button
               onClick={() => setShowCreateForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
+              disabled={homes.length === 0}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus className="w-4 h-4 mr-2" />
               Add Automation
@@ -419,6 +481,19 @@ export default function AutomationsPage() {
           </div>
         )}
 
+        {isAdmin && homes.length === 0 && (
+          <div className="mb-6 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-md text-sm">
+            <strong>Privacy Wall:</strong> Admin không thể xem hoặc quản lý automation của khách hàng. 
+            Admin chỉ có thể xem và quản lý automation trong nhà của chính mình (nếu có). 
+            Hiện tại bạn chưa có nhà nào.
+          </div>
+        )}
+        {isAdmin && homes.length > 0 && automations.length === 0 && (
+          <div className="mb-6 bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-md text-sm">
+            Bạn có {homes.length} nhà nhưng chưa có automation nào. Bạn có thể tạo automation cho nhà của chính mình.
+          </div>
+        )}
+
         {automations.length === 0 ? (
           <div className="text-center py-12">
             <Zap className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -428,12 +503,14 @@ export default function AutomationsPage() {
             <p className="text-gray-500 mb-4">
               Get started by creating your first automation.
             </p>
-            <button
-              onClick={() => setShowCreateForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-            >
-              Create Automation
-            </button>
+            {homes.length > 0 && (
+              <button
+                onClick={() => setShowCreateForm(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+              >
+                Create Automation
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -613,7 +690,8 @@ export default function AutomationsPage() {
             onCancel={() => setEditingAutomation(null)}
           />
         )}
-      </Layout>
+        </Layout>
+      </ServiceGuard>
     </ProtectedRoute>
   );
 }

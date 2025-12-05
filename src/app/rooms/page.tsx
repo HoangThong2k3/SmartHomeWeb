@@ -3,14 +3,21 @@
 import React, { useState, useEffect } from "react";
 import Layout from "@/components/layout/Layout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { ServiceGuard } from "@/components/auth/ServiceGuard";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiService } from "@/services/api";
+import { useServiceAccess } from "@/hooks/useServiceAccess";
 import { Room, Home } from "@/types";
-import { DoorOpen, Plus, Edit, Trash2, Building2, Tag } from "lucide-react";
+import { DoorOpen, Plus, Edit, Trash2, Building2 } from "lucide-react";
 import HomeSelector from "@/components/ui/HomeSelector";
 
 export default function RoomsPage() {
   const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const {
+    isActive: canUseService,
+    isLoading: isServiceLoading,
+  } = useServiceAccess();
   const [rooms, setRooms] = useState<Room[]>([]);
   const [homes, setHomes] = useState<Home[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -21,26 +28,30 @@ export default function RoomsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
+    if (isServiceLoading && !isAdmin) return;
+    if (!isAdmin && !canUseService) {
+      setIsLoading(false);
+      return;
+    }
     fetchData();
-  }, [user]);
+  }, [user, canUseService, isServiceLoading, isAdmin]);
 
   const fetchData = async () => {
     try {
       setIsLoading(true);
 
-      // Fetch homes first
-      let userHomes: Home[] = [];
-      if (user?.id) {
-        userHomes = await apiService.getHomesByOwner(user.id);
+      let targetHomes: Home[] = [];
+      if (isAdmin) {
+        // Admin: xem danh sách phòng của tất cả homes
+        targetHomes = await apiService.getAllHomes();
       } else {
-        console.warn('[RoomsPage] No user ID available. Cannot fetch homes.');
-        userHomes = [];
+        // Customer: chỉ homes của chính mình
+        targetHomes = await apiService.getMyHomes();
       }
-      setHomes(userHomes);
+      setHomes(targetHomes);
 
-      // Fetch rooms for each home
       const allRooms: Room[] = [];
-      for (const home of userHomes) {
+      for (const home of targetHomes) {
         try {
           const homeRooms = await apiService.getRoomsByHome(home.id);
           allRooms.push(...homeRooms);
@@ -53,30 +64,6 @@ export default function RoomsPage() {
       setError(err.message || "Failed to load rooms");
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleCreateRoom = async (roomData: any) => {
-    try {
-      setIsSubmitting(true);
-      setError(null);
-      setSuccess(null);
-      
-      const newRoom = await apiService.createRoom({
-        name: roomData.name,
-        type: roomData.type,
-        homeId: roomData.homeId,
-      });
-      
-      await fetchData(); // Refresh to get latest data
-      setShowCreateForm(false);
-      setSuccess(`Room "${newRoom.name}" created successfully!`);
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message || "Failed to create room");
-      setTimeout(() => setError(null), 5000);
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -93,49 +80,21 @@ export default function RoomsPage() {
         return;
       }
       
+      // Customer chỉ có thể update name, không update homeId
+      // Theo Swagger: PUT /api/Rooms/{id} chỉ nhận { name: "string" }
       await apiService.updateRoom(id, {
         name: roomData.name,
-        type: roomData.type,
       });
       
       await fetchData(); // Refresh to get latest data
       setEditingRoom(null);
-      setSuccess(`Room "${roomData.name}" updated successfully!`);
+      setSuccess(`Đã cập nhật tên phòng thành "${roomData.name}"!`);
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Failed to update room");
-      setTimeout(() => setError(null), 5000);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDeleteRoom = async (id: string) => {
-    const room = rooms.find((r) => r.id === id);
-    const roomName = room?.name || "this room";
-    
-    if (!confirm(`Are you sure you want to delete "${roomName}"? This action cannot be undone.`)) {
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      setError(null);
-      setSuccess(null);
-      
-      if (!id || id === "Unknown") {
-        setError("Invalid Room ID. Cannot delete.");
-        setTimeout(() => setError(null), 5000);
-        setIsSubmitting(false);
-        return;
-      }
-      
-      await apiService.deleteRoom(id);
-      await fetchData(); // Refresh to get latest data
-      setSuccess(`Room "${roomName}" deleted successfully!`);
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message || "Failed to delete room");
+      const errorMsg = err?.message || "Failed to update room";
+      setError(errorMsg.includes("403") || errorMsg.includes("Forbidden") 
+        ? "Bạn không có quyền cập nhật phòng này." 
+        : errorMsg);
       setTimeout(() => setError(null), 5000);
     } finally {
       setIsSubmitting(false);
@@ -147,63 +106,60 @@ export default function RoomsPage() {
     return home?.name || "Unknown Home";
   };
 
-  const formatRoomType = (t: Room["type"]) => {
-    switch (t) {
-      case "living_room":
-        return "Living Room";
-      case "bedroom":
-        return "Bedroom";
-      case "kitchen":
-        return "Kitchen";
-      case "bathroom":
-        return "Bathroom";
-      case "garage":
-        return "Garage";
-      default:
-        return "Other";
-    }
-  };
+  // Room type is no longer displayed/edited in UI.
 
   if (isLoading) {
     return (
       <ProtectedRoute>
-        <Layout>
-          <div className="flex items-center justify-center h-64">
+        <ServiceGuard>
+          <Layout>
+            <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
-        </Layout>
+            </div>
+          </Layout>
+        </ServiceGuard>
       </ProtectedRoute>
     );
   }
 
   return (
     <ProtectedRoute>
-      <Layout>
-        <div className="mb-8">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Rooms</h1>
-              <p className="text-gray-600 mt-2">
-                Manage rooms in your smart homes
-              </p>
-              <div className="mt-2 text-sm text-gray-500">
-                User:{" "}
-                <span className="font-medium text-blue-600">
-                  {user?.name || "Unknown"}
-                </span>{" "}
-                | Role:{" "}
-                <span className="font-medium">{user?.role || "Unknown"}</span>
+      <ServiceGuard>
+        <Layout>
+          <div className="mb-8">
+            <div className="flex justify-between items-center">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Rooms</h1>
+                <p className="text-gray-600 mt-2">
+                  {isAdmin
+                    ? "Admin: tạo / xóa phòng cho các homes của khách hàng"
+                    : "Quản lý các phòng trong ngôi nhà của bạn"}
+                </p>
+                <div className="mt-2 text-sm text-gray-500">
+                  User:{" "}
+                  <span className="font-medium text-blue-600">
+                    {user?.name || "Unknown"}
+                  </span>{" "}
+                  | Role:{" "}
+                  <span className="font-medium">{user?.role || "Unknown"}</span>
+                </div>
               </div>
+              {isAdmin ? (
+                <button
+                  onClick={() => setShowCreateForm(true)}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Room
+                </button>
+              ) : (
+                <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-md text-sm font-medium">
+                  Phòng được đội ngũ kỹ thuật tạo sẵn. Bạn chỉ có thể đổi tên
+                  phòng.
+                </div>
+              )}
             </div>
-            <button
-              onClick={() => setShowCreateForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Room
-            </button>
           </div>
-        </div>
 
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md flex items-center justify-between">
@@ -229,21 +185,29 @@ export default function RoomsPage() {
           </div>
         )}
 
-        {rooms.length === 0 ? (
+        {homes.length === 0 ? (
           <div className="text-center py-12">
             <DoorOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">
-              No rooms found
+              Chưa có nhà nào
             </h3>
             <p className="text-gray-500 mb-4">
-              Get started by creating your first room.
+              {isAdmin 
+                ? "Chưa có homes trong hệ thống. Vui lòng tạo home trước khi tạo phòng."
+                : "Bạn chưa có nhà. Vui lòng liên hệ admin để được tạo nhà và phòng."}
             </p>
-            <button
-              onClick={() => setShowCreateForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-            >
-              Create Room
-            </button>
+          </div>
+        ) : rooms.length === 0 ? (
+          <div className="text-center py-12">
+            <DoorOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              Chưa có phòng nào
+            </h3>
+            <p className="text-gray-500 mb-4">
+              {isAdmin 
+                ? "Chưa có phòng trong nhà này. Vui lòng tạo phòng mới."
+                : "Các phòng sẽ được đội ngũ kỹ thuật cấu hình sẵn khi bàn giao hệ thống."}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -262,31 +226,57 @@ export default function RoomsPage() {
                       {getHomeName(room.homeId)}
                     </div>
                     <div className="flex items-center text-sm text-gray-500 mb-2">
-                      <Tag className="w-4 h-4 mr-1" />
-                      Type:{" "}
-                      <span className="ml-1 font-medium text-gray-700">
-                        {formatRoomType(room.type)}
-                      </span>
+                      {/* Type removed from UI */}
                     </div>
-                    <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
-                      {room.type.replace("_", " ")}
-                    </span>
+                    {/* Badge for type removed */}
                   </div>
                   <div className="flex space-x-2">
-                    <button
-                      onClick={() => setEditingRoom(room)}
-                      className="text-blue-600 hover:text-blue-800"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteRoom(room.id)}
-                      disabled={isSubmitting}
-                      className="text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Delete room"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {!isAdmin && (
+                      <button
+                        onClick={() => setEditingRoom(room)}
+                        className="text-blue-600 hover:text-blue-800"
+                        title="Đổi tên phòng"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={async () => {
+                          const roomName = room.name || "this room";
+                          if (
+                            !confirm(
+                              `Are you sure you want to delete "${roomName}"? This action cannot be undone.`
+                            )
+                          ) {
+                            return;
+                          }
+                          try {
+                            setIsSubmitting(true);
+                            setError(null);
+                            setSuccess(null);
+                            await apiService.deleteRoom(room.id);
+                            await fetchData();
+                            setSuccess(
+                              `Room "${roomName}" deleted successfully!`
+                            );
+                            setTimeout(() => setSuccess(null), 3000);
+                          } catch (err: any) {
+                            setError(
+                              err?.message || "Failed to delete room"
+                            );
+                            setTimeout(() => setError(null), 5000);
+                          } finally {
+                            setIsSubmitting(false);
+                          }
+                        }}
+                        disabled={isSubmitting}
+                        className="text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Delete room"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -294,15 +284,37 @@ export default function RoomsPage() {
           </div>
         )}
 
-        {showCreateForm && (
+        {isAdmin && showCreateForm && (
           <CreateRoomForm
             homes={homes}
-            onSubmit={handleCreateRoom}
+            onSubmit={async (data) => {
+              try {
+                setIsSubmitting(true);
+                setError(null);
+                setSuccess(null);
+
+                const newRoom = await apiService.createRoom({
+                  name: data.name,
+                  homeId: data.homeId,
+                  // type không còn hiển thị ở UI, để BE quyết định / default
+                } as any);
+
+                await fetchData();
+                setShowCreateForm(false);
+                setSuccess(`Room "${newRoom.name}" created successfully!`);
+                setTimeout(() => setSuccess(null), 3000);
+              } catch (err: any) {
+                setError(err?.message || "Failed to create room");
+                setTimeout(() => setError(null), 5000);
+              } finally {
+                setIsSubmitting(false);
+              }
+            }}
             onCancel={() => setShowCreateForm(false)}
           />
         )}
 
-        {editingRoom && (
+        {editingRoom && !isAdmin && (
           <EditRoomForm
             room={editingRoom}
             homes={homes}
@@ -310,7 +322,8 @@ export default function RoomsPage() {
             onCancel={() => setEditingRoom(null)}
           />
         )}
-      </Layout>
+        </Layout>
+      </ServiceGuard>
     </ProtectedRoute>
   );
 }
@@ -326,7 +339,6 @@ function CreateRoomForm({
 }) {
   const [formData, setFormData] = useState({
     name: "",
-    type: "other",
     homeId: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -366,25 +378,6 @@ function CreateRoomForm({
             onChange={(homeId) => setFormData({ ...formData, homeId })}
             required
           />
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Type
-            </label>
-            <select
-              value={formData.type}
-              onChange={(e) =>
-                setFormData({ ...formData, type: e.target.value as any })
-              }
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="living_room">Living Room</option>
-              <option value="bedroom">Bedroom</option>
-              <option value="kitchen">Kitchen</option>
-              <option value="bathroom">Bathroom</option>
-              <option value="garage">Garage</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
           <div className="flex space-x-3 pt-4">
             <button
               type="submit"
@@ -419,10 +412,10 @@ function EditRoomForm({
   onSubmit: (data: any) => void;
   onCancel: () => void;
 }) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [formData, setFormData] = useState({
     name: room.name,
-    type: room.type,
-    homeId: room.homeId,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -430,20 +423,26 @@ function EditRoomForm({
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await onSubmit(formData);
+      // Customer chỉ có thể update name, không update homeId
+      // Theo Swagger: PUT /api/Rooms/{id} chỉ nhận { name: "string" }
+      await onSubmit({ name: formData.name });
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const homeName = homes.find(h => h.id === room.homeId)?.name || "Unknown Home";
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-md">
-        <h2 className="text-xl font-semibold mb-4">Edit Room</h2>
+        <h2 className="text-xl font-semibold mb-4">
+          {isAdmin ? "Edit Room" : "Đổi tên phòng"}
+        </h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Name
+              Tên phòng
             </label>
             <input
               type="text"
@@ -453,34 +452,26 @@ function EditRoomForm({
               }
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
+              placeholder="Nhập tên phòng"
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Type
-            </label>
-            <select
-              value={formData.type}
-              onChange={(e) =>
-                setFormData({ ...formData, type: e.target.value as any })
-              }
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="living_room">Living Room</option>
-              <option value="bedroom">Bedroom</option>
-              <option value="kitchen">Kitchen</option>
-              <option value="bathroom">Bathroom</option>
-              <option value="garage">Garage</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
+          {!isAdmin && (
+            <div className="bg-gray-50 border border-gray-200 rounded-md p-3">
+              <p className="text-sm text-gray-600">
+                <strong>Nhà:</strong> {homeName}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Bạn chỉ có thể đổi tên phòng, không thể thay đổi nhà.
+              </p>
+            </div>
+          )}
           <div className="flex space-x-3 pt-4">
             <button
               type="submit"
               disabled={isSubmitting}
               className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? "Updating..." : "Update"}
+              {isSubmitting ? "Đang cập nhật..." : "Cập nhật"}
             </button>
             <button
               type="button"
@@ -488,7 +479,7 @@ function EditRoomForm({
               disabled={isSubmitting}
               className="bg-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Cancel
+              Hủy
             </button>
           </div>
         </form>

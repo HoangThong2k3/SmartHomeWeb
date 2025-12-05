@@ -2,6 +2,15 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+        pathname: '/**',
+      },
+    ],
+  },
   async rewrites() {
     return [
       {
@@ -12,9 +21,8 @@ const nextConfig: NextConfig = {
     ];
   },
   // Disable SSL verification for development
-  experimental: {
-    serverComponentsExternalPackages: [],
-  },
+  // Note: serverComponentsExternalPackages moved to serverExternalPackages in Next 15+
+  serverExternalPackages: [],
   // Allow build to continue with ESLint warnings
   eslint: {
     // Warning: This allows production builds to successfully complete even if
