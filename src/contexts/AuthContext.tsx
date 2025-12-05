@@ -60,8 +60,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           // Try JWT decode (ignore errors)
           try {
             const payloadBase64 = storedToken.split(".")[1];
-            JSON.parse(atob(payloadBase64.replace(/-/g, "+").replace(/_/g, "/")))
-            valid = true;
+            const payload = JSON.parse(
+              atob(payloadBase64.replace(/-/g, "+").replace(/_/g, "/"))
+            );
+            const expMs = payload?.exp ? Number(payload.exp) * 1000 : null;
+            // Treat missing exp as valid legacy token; expired -> invalid session
+            if (expMs && expMs < Date.now()) {
+              valid = false;
+            } else {
+              valid = true;
+            }
           } catch {
             // Invalid JWT
             valid = false;
