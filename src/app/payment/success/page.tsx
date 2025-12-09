@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CheckCircle, XCircle, Loader2, Home } from "lucide-react";
+import { CheckCircle, XCircle, Loader2, Home, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { apiService } from "@/services/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -14,7 +14,40 @@ function PaymentSuccessContent() {
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [message, setMessage] = useState<string>("");
 
+  const QuickLinks = () => (
+    <div className="mb-4 flex flex-col sm:flex-row gap-3 justify-center">
+      <Link
+        href="/user-dashboard"
+        className="inline-flex items-center justify-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-md hover:shadow-lg"
+      >
+        <Home className="h-5 w-5 mr-2" />
+        Về Dashboard
+      </Link>
+      <Link
+        href="/"
+        className="inline-flex items-center justify-center px-6 py-3 bg-gray-100 text-gray-800 font-medium rounded-lg hover:bg-gray-200 transition-colors border border-gray-200"
+      >
+        Trang chủ
+      </Link>
+    </div>
+  );
+
   useEffect(() => {
+    // Check if we're on backend URL, redirect to frontend
+    if (typeof window !== "undefined") {
+      const currentUrl = window.location.href;
+      if (currentUrl.includes("smarthomes-fdbehwcuaaexaggv.eastasia-01.azurewebsites.net")) {
+        // Extract query params and redirect to frontend
+        const urlParams = new URLSearchParams(window.location.search);
+        // Use frontend URL - replace backend domain with frontend domain
+        const frontendOrigin = process.env.NEXT_PUBLIC_FRONTEND_URL || 
+          (currentUrl.includes("vercel.app") ? currentUrl.split("/payment")[0] : "https://smart-home-web-seven.vercel.app");
+        const frontendUrl = `${frontendOrigin}/payment/success?${urlParams.toString()}`;
+        window.location.href = frontendUrl;
+        return;
+      }
+    }
+
     const cancel = searchParams.get("cancel");
     if (cancel === "true") {
       router.push("/payment/cancel");
@@ -71,6 +104,7 @@ function PaymentSuccessContent() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
+        <QuickLinks />
         {status === "loading" && (
           <>
             <Loader2 className="h-16 w-16 text-blue-600 mx-auto mb-4 animate-spin" />
@@ -100,13 +134,15 @@ function PaymentSuccessContent() {
               Đội ngũ kỹ thuật sẽ liên hệ với bạn để cài đặt hệ thống. 
               Bạn sẽ nhận được thông báo khi dịch vụ sẵn sàng sử dụng.
             </p>
-            <Link
-              href="/user-dashboard"
-              className="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Home className="h-5 w-5 mr-2" />
-              Về Dashboard
-            </Link>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Link
+                href="/user-dashboard"
+                className="inline-flex items-center justify-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-md hover:shadow-lg"
+              >
+                <Home className="h-5 w-5 mr-2" />
+                Về Dashboard
+              </Link>
+            </div>
           </>
         )}
 
@@ -123,17 +159,19 @@ function PaymentSuccessContent() {
             <p className="text-gray-600 mb-6">
               {message}
             </p>
-            <div className="flex space-x-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <Link
                 href="/subscribe"
-                className="flex-1 inline-flex items-center justify-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                className="flex-1 inline-flex items-center justify-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-md hover:shadow-lg"
               >
+                <ArrowLeft className="h-5 w-5 mr-2" />
                 Thử lại
               </Link>
               <Link
                 href="/user-dashboard"
-                className="flex-1 inline-flex items-center justify-center px-6 py-3 bg-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-400 transition-colors"
+                className="flex-1 inline-flex items-center justify-center px-6 py-3 bg-gray-600 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors shadow-md hover:shadow-lg"
               >
+                <Home className="h-5 w-5 mr-2" />
                 Về Dashboard
               </Link>
             </div>

@@ -79,6 +79,13 @@ export default function AutomationsPage() {
       return;
     }
 
+    // Admin không được xem automations của khách (Privacy Wall)
+    if (isAdmin) {
+      setIsLoading(false);
+      setError("Admin không thể xem automations của khách hàng (Privacy Wall). Vui lòng đăng nhập bằng tài khoản customer để xem hoặc quản lý automations.");
+      return;
+    }
+
     fetchData();
   }, [user, canUseService, isServiceLoading]);
 

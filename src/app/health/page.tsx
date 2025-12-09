@@ -215,6 +215,46 @@ export default function HealthPage() {
           </div>
         </div>
 
+        {/* Quick summary cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Live</p>
+                <p className="text-lg font-semibold text-gray-900">
+                  {getStatusValue(healthData?.live)}
+                </p>
+              </div>
+              {getStatusIcon(getStatusValue(healthData?.live))}
+            </div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Ready</p>
+                <p className="text-lg font-semibold text-gray-900">
+                  {healthData?.ready ? getStatusValue(healthData?.ready) : "N/A"}
+                </p>
+              </div>
+              {getStatusIcon(getStatusValue(healthData?.ready))}
+            </div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Environment</p>
+                <p className="text-lg font-semibold text-gray-900">
+                  {meta?.environment || "Unknown"}
+                </p>
+                <p className="text-xs text-gray-500">
+                  Uptime: {meta?.uptimeSeconds !== undefined ? formatUptime(meta.uptimeSeconds) : "N/A"}
+                </p>
+              </div>
+              <Clock className="w-5 h-5 text-blue-500" />
+            </div>
+          </div>
+        </div>
+
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md">
             {error}

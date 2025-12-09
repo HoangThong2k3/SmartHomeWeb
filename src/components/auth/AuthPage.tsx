@@ -16,8 +16,9 @@ export function AuthPage() {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      // Both admin and user go to user-dashboard
-      window.location.href = "/user-dashboard";
+      const role = (user.role || "").toLowerCase();
+      const dest = role === "admin" ? "/admin" : "/user-dashboard";
+      window.location.href = dest;
     }
   }, [isAuthenticated, user, router]);
 
@@ -46,8 +47,9 @@ export function AuthPage() {
 
   const handleAuthSuccess = () => {
     try {
-      // Both admin and user go to user-dashboard
-      window.location.href = "/user-dashboard";
+      const role = (user?.role || "").toLowerCase();
+      const dest = role === "admin" ? "/admin" : "/user-dashboard";
+      window.location.href = dest;
     } catch (error) {
       window.location.href = "/user-dashboard";
     }

@@ -42,6 +42,9 @@ import {
   SupportRequest,
   CreateSupportRequestRequest,
   UpdateSupportRequestStatusRequest,
+  StatsSummary,
+  RevenuePoint,
+  RecentTransaction,
 } from "@/types";
 
 // Base URL cho backend, ưu tiên lấy từ biến môi trường NEXT_PUBLIC_API_URL
@@ -1305,10 +1308,28 @@ class ApiService {
 
   async createHome(homeData: CreateHomeRequest): Promise<Home> {
     // Convert camelCase to PascalCase for backend
+    const ownerIdNum = parseInt(homeData.ownerId);
+    if (!Number.isFinite(ownerIdNum) || ownerIdNum <= 0) {
+      throw new Error("OwnerId is required and must be a valid number");
+    }
+
     const payload = {
       Name: homeData.name,
-      OwnerId: parseInt(homeData.ownerId),
+      OwnerId: ownerIdNum,
       SecurityStatus: homeData.securityStatus || "DISARMED",
+      ...(homeData.address ? { Address: homeData.address } : {}),
+      ...(homeData.description ? { Description: homeData.description } : {}),
+      ...(homeData.securityMode ? { SecurityMode: homeData.securityMode } : {}),
+      ...(homeData.homeType ? { HomeType: homeData.homeType } : {}),
+      ...(homeData.area !== undefined ? { Area: homeData.area } : {}),
+      ...(homeData.floors !== undefined ? { Floors: homeData.floors } : {}),
+      ...(homeData.installationDate
+        ? { InstallationDate: homeData.installationDate }
+        : {}),
+      ...(homeData.installedBy ? { InstalledBy: homeData.installedBy } : {}),
+      ...(homeData.installationNotes
+        ? { InstallationNotes: homeData.installationNotes }
+        : {}),
     };
     const created = await this.request<any>("/Homes", {
       method: "POST",
@@ -1893,6 +1914,48 @@ class ApiService {
       isActive: api?.IsActive ?? api?.isActive ?? false,
       createdAt: api?.CreatedAt || api?.createdAt || new Date().toISOString(),
     };
+  }
+
+  // Admin Stats APIs
+  async getStatsSummary(): Promise<StatsSummary> {
+    const data = await this.request<any>("/Stats/summary");
+    return {
+      totalRevenue: data?.TotalRevenue ?? data?.totalRevenue ?? 0,
+      totalUsers: data?.TotalUsers ?? data?.totalUsers ?? 0,
+      activeSubscribers: data?.ActiveSubscribers ?? data?.activeSubscribers ?? 0,
+      totalHomes: data?.TotalHomes ?? data?.totalHomes ?? 0,
+      totalRooms: data?.TotalRooms ?? data?.totalRooms ?? 0,
+      totalDevices: data?.TotalDevices ?? data?.totalDevices ?? 0,
+      pendingSupportRequests:
+        data?.PendingSupportRequests ?? data?.pendingSupportRequests ?? 0,
+    };
+  }
+
+  async getRevenueChart(year?: number): Promise<RevenuePoint[]> {
+    const query = year ? `?year=${year}` : "";
+    const list = await this.request<any[]>(`/Stats/revenue-chart${query}`);
+    return (list || []).map((item) => ({
+      month: item?.Month ?? item?.month ?? 0,
+      revenue: item?.Revenue ?? item?.revenue ?? 0,
+      monthName: item?.MonthName ?? item?.monthName ?? "",
+    }));
+  }
+
+  async getRecentTransactions(count: number = 5): Promise<RecentTransaction[]> {
+    const list = await this.request<any[]>(
+      `/Stats/recent-transactions?count=${count}`
+    );
+    return (list || []).map((t) => ({
+      paymentId: t?.PaymentId ?? t?.paymentId ?? 0,
+      userId: t?.UserId ?? t?.userId ?? 0,
+      userEmail: t?.UserEmail ?? t?.userEmail ?? "",
+      userName: t?.UserName ?? t?.userName ?? "",
+      amount: t?.Amount ?? t?.amount ?? 0,
+      currency: t?.Currency ?? t?.currency ?? "VND",
+      method: t?.Method ?? t?.method ?? "",
+      description: t?.Description ?? t?.description ?? "",
+      createdAt: t?.CreatedAt ?? t?.createdAt ?? new Date().toISOString(),
+    }));
   }
 
   private mapPaymentLinkResponseFromApi(api: any): PaymentLinkResponse {

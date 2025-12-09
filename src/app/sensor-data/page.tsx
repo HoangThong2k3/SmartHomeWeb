@@ -8,7 +8,16 @@ import { useAuth } from "@/contexts/AuthContext";
 import { apiService } from "@/services/api";
 import { useServiceAccess } from "@/hooks/useServiceAccess";
 import { Device, Home, Room, CreateSensorDataRequest } from "@/types";
-import { Thermometer, Plus, Eye, Trash2, Calendar, Filter, Edit } from "lucide-react";
+import {
+  Thermometer,
+  Plus,
+  Eye,
+  Trash2,
+  Calendar,
+  Filter,
+  Edit,
+  RefreshCw,
+} from "lucide-react";
 
 export default function SensorDataPage() {
   const { user } = useAuth();
@@ -17,14 +26,18 @@ export default function SensorDataPage() {
     isLoading: isServiceLoading,
   } = useServiceAccess();
   const [sensorData, setSensorData] = useState<any[]>([]);
+   const [latestData, setLatestData] = useState<any | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [homes, setHomes] = useState<Home[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingLatest, setIsLoadingLatest] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingSensorData, setEditingSensorData] = useState<any | null>(null);
   const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [dateRange, setDateRange] = useState({ from: "", to: "" });
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(200);
 
   useEffect(() => {
     if (isServiceLoading) return;
@@ -38,10 +51,12 @@ export default function SensorDataPage() {
   useEffect(() => {
     if (selectedDevice && canUseService) {
       fetchSensorData();
+      fetchLatestSensorData();
     } else {
       setSensorData([]);
+      setLatestData(null);
     }
-  }, [selectedDevice, dateRange, canUseService]);
+  }, [selectedDevice, dateRange, page, pageSize, canUseService]);
 
   const fetchDevices = async () => {
     try {
@@ -99,7 +114,7 @@ export default function SensorDataPage() {
         "[SensorDataPage] Fetching sensor data for device:",
         selectedDevice,
         "with query:",
-        dateRange
+        { ...dateRange, page, pageSize }
       );
 
       if (selectedDevice) {
@@ -110,6 +125,8 @@ export default function SensorDataPage() {
         if (dateRange.to) {
           query.to = new Date(dateRange.to).toISOString();
         }
+        if (page) query.page = page;
+        if (pageSize) query.pageSize = pageSize;
 
         console.log("[SensorDataPage] Query params:", query);
         const data = await apiService.getSensorData(selectedDevice, query);
@@ -140,6 +157,30 @@ export default function SensorDataPage() {
       setError(errorMsg);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchLatestSensorData = async () => {
+    if (!selectedDevice) return;
+    try {
+      setIsLoadingLatest(true);
+      const latest = await apiService.getLatestSensorData(selectedDevice);
+      if (latest) {
+        setLatestData(
+          Array.isArray(latest)
+            ? latest[0]
+            : {
+                ...latest,
+              }
+        );
+      } else {
+        setLatestData(null);
+      }
+    } catch (err: any) {
+      console.warn("[SensorDataPage] Could not fetch latest sensor data:", err?.message || err);
+      setLatestData(null);
+    } finally {
+      setIsLoadingLatest(false);
     }
   };
 
@@ -297,13 +338,15 @@ export default function SensorDataPage() {
               <h1 className="text-3xl font-bold text-gray-900">Sensor Data</h1>
               <p className="text-gray-600 mt-2">Monitor and manage sensor readings</p>
             </div>
-            <button
-              onClick={() => setShowCreateForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Data
-            </button>
+            {user?.role === "admin" && (
+              <button
+                onClick={() => setShowCreateForm(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Data
+              </button>
+            )}
           </div>
         </div>
 
@@ -319,7 +362,7 @@ export default function SensorDataPage() {
             <Filter className="w-5 h-5 mr-2" />
             Filters
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Device
@@ -359,8 +402,103 @@ export default function SensorDataPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Page
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={page}
+                onChange={(e) => setPage(Number(e.target.value) || 1)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Page Size
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={1000}
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value) || 200)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+          <div className="mt-4 flex items-center space-x-3">
+            <button
+              onClick={fetchSensorData}
+              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Apply filters
+            </button>
+            <button
+              onClick={() => {
+                setDateRange({ from: "", to: "" });
+                setPage(1);
+                setPageSize(200);
+              }}
+              className="text-sm text-gray-600 hover:text-gray-800"
+            >
+              Clear
+            </button>
           </div>
         </div>
+
+        {/* Latest reading */}
+        {selectedDevice && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="text-sm text-gray-500">Latest reading</p>
+                <p className="text-lg font-semibold text-gray-900">
+                  Device ID: {selectedDevice}
+                </p>
+              </div>
+              {isLoadingLatest && (
+                <div className="flex items-center text-sm text-gray-500">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                  Loading...
+                </div>
+              )}
+            </div>
+            {latestData ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Value (JSON)</p>
+                  <pre className="text-xs bg-white rounded p-2 border overflow-x-auto whitespace-pre-wrap">
+                    {JSON.stringify(parseSensorValue(latestData.value), null, 2)}
+                  </pre>
+                </div>
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Timestamp</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {formatTimestamp(
+                      latestData.timeStamp ||
+                        latestData.TimeStamp ||
+                        latestData.timestamp ||
+                        latestData.Timestamp
+                    )}
+                  </p>
+                </div>
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Record ID</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {latestData.id || latestData.Id || "N/A"}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">
+                {isLoadingLatest ? "Đang tải dữ liệu..." : "Chưa có bản ghi mới nhất cho thiết bị này."}
+              </p>
+            )}
+          </div>
+        )}
 
         {isLoading ? (
           <div className="flex items-center justify-center h-64">

@@ -16,6 +16,7 @@ import {
   CreditCard,
   Package,
   MessageSquare,
+  BarChart3,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -24,7 +25,7 @@ export default function Sidebar() {
 
   // Menu items based on user role
   const getMenuItems = () => {
-    const baseItems = [
+    let baseItems = [
       { name: "Dashboard", href: "/user-dashboard", icon: Home },
       { name: "Homes", href: "/homes", icon: Building2 },
       { name: "Rooms", href: "/rooms", icon: DoorOpen },
@@ -36,10 +37,19 @@ export default function Sidebar() {
 
     // Admin only items
     if (user?.role === "admin") {
-      baseItems.splice(1, 0, { name: "Users", href: "/users", icon: Users });
-      baseItems.splice(2, 0, { name: "Admin Payments", href: "/admin/payments", icon: CreditCard });
-      baseItems.splice(3, 0, { name: "Service Packages", href: "/admin/packages", icon: Package });
-      baseItems.splice(4, 0, { name: "Support Requests", href: "/admin/support-requests", icon: MessageSquare });
+      // Loại bỏ menu dành cho customer (dashboard khách, payments khách)
+      baseItems = baseItems.filter(
+        (item) => !["/user-dashboard", "/payments"].includes(item.href)
+      );
+
+      // Thêm lại user dashboard cho admin (để quay về giao diện user)
+      
+
+      baseItems.splice(1, 0, { name: "Admin Dashboard", href: "/admin", icon: BarChart3 });
+      baseItems.splice(2, 0, { name: "Users Management", href: "/users", icon: Users });
+      baseItems.splice(3, 0, { name: "Admin Payments", href: "/admin/payments", icon: CreditCard });
+      baseItems.splice(4, 0, { name: "Service Packages", href: "/admin/packages", icon: Package });
+      baseItems.splice(5, 0, { name: "Support Requests", href: "/admin/support-requests", icon: MessageSquare });
     }
 
     // Add system pages

@@ -105,6 +105,15 @@ export interface CreateHomeRequest {
   name: string;
   ownerId: string;
   securityStatus?: string;
+  address?: string;
+  description?: string;
+  securityMode?: string;
+  homeType?: string;
+  area?: number;
+  floors?: number;
+  installationDate?: string;
+  installedBy?: string;
+  installationNotes?: string;
 }
 
 export interface UpdateHomeRequest {
@@ -469,4 +478,33 @@ export interface CreateSupportRequestRequest {
 
 export interface UpdateSupportRequestStatusRequest {
   status: "PENDING" | "CONTACTED" | "RESOLVED" | "CLOSED"; // Status
+}
+
+// Admin Dashboard Stats
+export interface StatsSummary {
+  totalRevenue: number;
+  totalUsers: number;
+  activeSubscribers: number;
+  totalHomes: number;
+  totalRooms: number;
+  totalDevices: number;
+  pendingSupportRequests: number;
+}
+
+export interface RevenuePoint {
+  month: number;
+  revenue: number;
+  monthName: string;
+}
+
+export interface RecentTransaction {
+  paymentId: number;
+  userId: number;
+  userEmail: string;
+  userName: string;
+  amount: number;
+  currency: string;
+  method: string;
+  description: string;
+  createdAt: string;
 }

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thanh toán đã bị hủy</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f3f4f6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        .icon {
+            width: 80px;
+            height: 80px;
+            background: #fef3c7;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 24px;
+        }
+        .icon svg {
+            width: 48px;
+            height: 48px;
+            color: #f59e0b;
+        }
+        h1 {
+            font-size: 24px;
+            font-weight: bold;
+            color: #111827;
+            margin-bottom: 16px;
+        }
+        p {
+            color: #6b7280;
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+        .alert {
+            background: #fef3c7;
+            border: 1px solid #fde68a;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 24px;
+            text-align: left;
+        }
+        .alert-text {
+            color: #92400e;
+            font-size: 14px;
+        }
+        .buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.2s;
+            cursor: pointer;
+            border: none;
+            font-size: 16px;
+        }
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #1d4ed8;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
+        .btn-secondary {
+            background: #e5e7eb;
+            color: #374151;
+        }
+        .btn-secondary:hover {
+            background: #d1d5db;
+        }
+        .btn svg {
+            width: 20px;
+            height: 20px;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+        </div>
+        <h1>Thanh toán đã bị hủy</h1>
+        <p>Bạn đã hủy quá trình thanh toán. Nếu bạn muốn tiếp tục đăng ký dịch vụ, vui lòng thử lại.</p>
+        <div class="alert">
+            <p class="alert-text">Bạn có thể thử lại sau hoặc quay về trang chủ để tiếp tục sử dụng dịch vụ.</p>
+        </div>
+        <div class="buttons">
+            <a href="https://smart-home-web-seven.vercel.app/user-dashboard" class="btn btn-primary">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+                </svg>
+                Về Dashboard
+            </a>
+            <a href="https://smart-home-web-seven.vercel.app/subscribe" class="btn btn-secondary">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+                Quay lại đăng ký dịch vụ
+            </a>
+        </div>
+    </div>
+    <script>
+        // Auto-redirect to frontend if on backend URL
+        (function() {
+            const currentUrl = window.location.href;
+            const frontendUrl = 'https://smart-home-web-seven.vercel.app';
+            
+            // Extract query params
+            const urlParams = new URLSearchParams(window.location.search);
+            const params = urlParams.toString();
+            
+            // If on backend, try to redirect to frontend
+            if (currentUrl.includes('smarthomes-fdbehwcuaaexaggv.eastasia-01.azurewebsites.net')) {
+                const frontendCancelUrl = `${frontendUrl}/payment/cancel${params ? '?' + params : ''}`;
+                // Try redirect after a short delay to show the page first
+                setTimeout(function() {
+                    window.location.href = frontendCancelUrl;
+                }, 1000);
+            }
+        })();
+    </script>
+</body>
+</html>
+
