@@ -32,7 +32,7 @@ const UserNavigation = () => {
   return (
     <nav className="bg-white shadow-sm border-r">
       <div className="px-4 py-6">
-        <Link href="/" className="block">
+        <Link href="/user-dashboard" className="block" prefetch={false}>
           <h1 className="text-2xl font-bold text-blue-600 hover:text-blue-700 transition-colors cursor-pointer">SmartHome</h1>
         </Link>
       </div>

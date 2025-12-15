@@ -123,6 +123,8 @@ export default function RoomDetailPage() {
 
   const sensorData = getSensorData();
   const controlDevices = getControlDevices();
+  const totalDevices = devices.length;
+  const onlineDevices = devices.filter((d) => d.status === "online").length;
 
   if (isLoading) {
     return (
@@ -215,9 +217,26 @@ export default function RoomDetailPage() {
                   )}
                 </div>
                 {home && (
-                  <p className="text-sm text-gray-500">
-                    {home.name}
-                  </p>
+                  <div className="text-right">
+                    <p className="text-sm text-gray-500">{home.name}</p>
+                    <p className="text-xs text-gray-400">
+                      Home ID: {home.id}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2 text-sm">
+                <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                  {totalDevices} thiết bị
+                </span>
+                <span className="px-2 py-1 rounded-full bg-green-50 text-green-700">
+                  {onlineDevices} online
+                </span>
+                {room.type && (
+                  <span className="px-2 py-1 rounded-full bg-indigo-50 text-indigo-700 capitalize">
+                    {room.type.replace("_", " ")}
+                  </span>
                 )}
               </div>
             </div>

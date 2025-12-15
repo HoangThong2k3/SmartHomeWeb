@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, Suspense, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Home,
   Users,
@@ -23,17 +23,48 @@ import {
   Edit,
   Activity,
   Eye,
+  DoorOpen,
+  Cpu,
 } from "lucide-react";
 import { Home as HomeType, Room, Device } from "@/types";
-import UserLayout from "@/components/layout/UserLayout";
 import Layout from "@/components/layout/Layout";
 import Card from "@/components/ui/Card";
 import { apiService } from "@/services/api";
 import { useServiceAccess } from "@/hooks/useServiceAccess";
 
-export default function UserDashboard() {
+const SummaryCard = ({
+  title,
+  value,
+  sub,
+  icon,
+  color,
+}: {
+  title: string;
+  value: React.ReactNode;
+  sub?: string;
+  icon: React.ReactNode;
+  color: string;
+}) => (
+  <div className="relative overflow-hidden rounded-2xl bg-white/90 backdrop-blur border border-slate-100 shadow-md hover:shadow-xl transition-all">
+    <div className={`absolute inset-0 bg-gradient-to-br ${color} opacity-10`} />
+    <div className="relative p-4 flex items-center justify-between">
+      <div>
+        <p className="text-xs uppercase tracking-wide text-slate-500">{title}</p>
+        <p className="text-2xl font-bold text-slate-900">{value}</p>
+        {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
+      </div>
+      <div className="h-10 w-10 rounded-xl bg-slate-900/5 flex items-center justify-center text-slate-700">
+        {icon}
+      </div>
+    </div>
+  </div>
+);
+
+function UserDashboardInner() {
   const { user } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isAdmin = (user?.role || "").toLowerCase() === "admin";
   const {
     isActive: canUseService,
     isLoading: isServiceLoading,
@@ -44,6 +75,8 @@ export default function UserDashboard() {
   const [homes, setHomes] = useState<HomeType[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
+  const [selectedHomeId, setSelectedHomeId] = useState<string | null>(null);
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const currentUser =
     serviceUser ||
@@ -57,6 +90,22 @@ export default function UserDashboard() {
   const [securityStatus, setSecurityStatus] = useState<"ARMED" | "DISARMED">("DISARMED");
   const [showSecurityConfirm, setShowSecurityConfirm] = useState(false);
   const [pendingSecurityStatus, setPendingSecurityStatus] = useState<"ARMED" | "DISARMED" | null>(null);
+  // Mappings cho nhanh UI
+  const roomsByHome = useMemo(() => {
+    const map: Record<string, Room[]> = {};
+    rooms.forEach((r) => {
+      map[r.homeId] = map[r.homeId] ? [...map[r.homeId], r] : [r];
+    });
+    return map;
+  }, [rooms]);
+
+  const devicesByHome = useMemo(() => {
+    const map: Record<string, Device[]> = {};
+    devices.forEach((d) => {
+      map[d.roomId] = map[d.roomId] ? [...map[d.roomId], d] : [d];
+    });
+    return map;
+  }, [devices]);
   
   // Refs để prevent infinite loop
   const hasFetchedRef = useRef<string | number | null>(null);
@@ -97,6 +146,12 @@ export default function UserDashboard() {
           console.log("[UserDashboard] Admin fetched all homes:", allHomes?.length || 0);
           
           setHomes(allHomes || []);
+          const homeIdParam = searchParams.get("homeId");
+          const defaultHomeId =
+            homeIdParam && allHomes?.some((h) => h.id === homeIdParam)
+              ? homeIdParam
+              : allHomes?.[0]?.id ?? null;
+          setSelectedHomeId(defaultHomeId);
           
           // Fetch rooms và devices cho tất cả homes (giống như rooms/page.tsx)
           const allRooms: Room[] = [];
@@ -123,6 +178,12 @@ export default function UserDashboard() {
           
           setRooms(allRooms);
           setDevices(allDevices);
+          if (allRooms && allRooms.length > 0 && defaultHomeId) {
+            const firstRoom = allRooms.find((r) => r.homeId === defaultHomeId) || allRooms[0];
+            setSelectedRoomId(firstRoom?.id || null);
+          } else {
+            setSelectedRoomId(null);
+          }
         } catch (error: any) {
           console.error("Error fetching admin dashboard data:", error);
           setHomes([]);
@@ -184,6 +245,12 @@ export default function UserDashboard() {
           hasFetchedRef.current = userId || null;
           
           setHomes(userHomes || []);
+          const homeIdParam = searchParams.get("homeId");
+          const defaultHomeId =
+            homeIdParam && userHomes?.some((h) => h.id === homeIdParam)
+              ? homeIdParam
+              : userHomes?.[0]?.id ?? null;
+          setSelectedHomeId(defaultHomeId);
           
           // Nếu có service ACTIVE nhưng không có home, reset 403 flag để có thể retry
           if (userHomes.length === 0 && hasValidService && serviceUser?.serviceStatus === "ACTIVE") {
@@ -200,6 +267,13 @@ export default function UserDashboard() {
           if (userHomes && userHomes.length > 0) {
             const homeRooms = await apiService.getRoomsByHome(userHomes[0].id);
             setRooms(homeRooms || []);
+            if (homeRooms && homeRooms.length > 0) {
+              const firstRoom =
+                homeRooms.find((r) => r.homeId === defaultHomeId) || homeRooms[0];
+              setSelectedRoomId(firstRoom?.id || null);
+            } else {
+              setSelectedRoomId(null);
+            }
             
             // Fetch devices cho tất cả phòng
             const allDevices: Device[] = [];
@@ -320,36 +394,48 @@ export default function UserDashboard() {
     };
   };
 
+  const getDeviceStatusBadge = (status?: string) => {
+    const s = (status || "").toLowerCase();
+    const isOnline = s === "online";
+    return isOnline
+      ? "bg-emerald-100 text-emerald-700"
+      : "bg-gray-100 text-gray-600";
+  };
+
   // Use Layout with Sidebar for admin, UserLayout for regular users
-  const DashboardContent = ({ showHeader = false }: { showHeader?: boolean }) => (
+  const DashboardContent = ({ showHeader = false }: { showHeader?: boolean }) => {
+    const totalHomes = homes.length;
+    const totalRooms = rooms.length;
+    const totalDevices = devices.length;
+    const selectedHome = homes.find((h) => h.id === selectedHomeId);
+
+    return (
     <>
       {/* Header - only show for UserLayout */}
       {showHeader && (
-        <header className="bg-white shadow-sm border-b">
-          <div className="px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              <div className="flex items-center">
-                <h1 className="text-xl font-semibold text-gray-900">Dashboard</h1>
+          <header className="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-800 text-white shadow-sm">
+            <div className="px-4 sm:px-6 lg:px-8 py-5">
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-indigo-200">User Dashboard</p>
+                  <h1 className="text-2xl font-semibold">Chào, {user?.name || "User"}</h1>
+                  <p className="text-sm text-indigo-100 mt-1">Quản lý nhà, phòng và thiết bị thông minh</p>
               </div>
-
-              <div className="flex items-center space-x-4">
-                <button className="p-2 text-gray-400 hover:text-gray-500">
-                  <Search className="h-5 w-5" />
-                </button>
-                <button className="p-2 text-gray-400 hover:text-gray-500 relative">
-                  <Bell className="h-5 w-5" />
-                  <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full"></span>
-                </button>
-
                 <div className="flex items-center space-x-3">
-                  <div className="h-8 w-8 bg-blue-500 rounded-full flex items-center justify-center">
-                    <span className="text-white text-sm font-medium">
+                  <button className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white">
+                    <Search className="h-5 w-5" />
+                  </button>
+                  <button className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white relative">
+                    <Bell className="h-5 w-5" />
+                    <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-400 rounded-full"></span>
+                  </button>
+                  <div className="flex items-center space-x-2 bg-white/10 px-3 py-2 rounded-lg">
+                    <div className="h-8 w-8 bg-white text-indigo-800 rounded-full flex items-center justify-center font-semibold">
                       {user?.name?.charAt(0).toUpperCase() || "U"}
-                    </span>
                   </div>
-                  <div className="text-sm">
-                    <p className="font-medium text-gray-900">{user?.email}</p>
-                    <p className="text-gray-500 capitalize">{user?.role || "Customer"}</p>
+                    <div className="text-sm leading-tight">
+                      <p className="font-semibold">{user?.email}</p>
+                      <p className="text-indigo-100 capitalize">{user?.role || "Customer"}</p>
                   </div>
                 </div>
               </div>
@@ -358,7 +444,45 @@ export default function UserDashboard() {
         </header>
       )}
 
-      <div className={showHeader ? "px-4 sm:px-6 lg:px-8 py-8" : ""}>
+        <div className={showHeader ? "px-4 sm:px-6 lg:px-8 py-8 bg-gradient-to-br from-slate-50 via-white to-blue-50 min-h-screen" : ""}>
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+            <SummaryCard
+              title="Homes"
+              value={totalHomes}
+              sub={selectedHome ? `Đang xem: ${selectedHome.name}` : "Tất cả homes"}
+              icon={<Home className="w-5 h-5" />}
+              color="from-blue-500 to-indigo-500"
+            />
+            <SummaryCard
+              title="Rooms"
+              value={totalRooms}
+              sub={selectedHome ? `Trong home: ${selectedHome.name}` : "Tổng số phòng"}
+              icon={<DoorOpen className="w-5 h-5" />}
+              color="from-purple-500 to-pink-500"
+            />
+            <SummaryCard
+              title="Devices"
+              value={totalDevices}
+              sub="Thiết bị đã kết nối"
+              icon={<Cpu className="w-5 h-5" />}
+              color="from-emerald-500 to-teal-500"
+            />
+            <SummaryCard
+              title="Security"
+              value={securityStatus === "ARMED" ? "Armed" : "Disarmed"}
+              sub={homes.length ? homes[0].name : "Hệ thống"}
+              icon={
+                securityStatus === "ARMED" ? (
+                  <ShieldCheck className="w-5 h-5" />
+                ) : (
+                  <ShieldOff className="w-5 h-5" />
+                )
+              }
+              color="from-amber-500 to-orange-500"
+            />
+          </div>
+
         {/* Welcome Section */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
@@ -487,145 +611,184 @@ export default function UserDashboard() {
               </div>
             )}
 
-            {/* Thẻ tóm tắt từng phòng */}
-                {isLoading ? (
+            {/* Hierarchical view: Homes → Rooms → Devices */}
+            {isLoading ? (
               <div className="text-center py-12">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
                 <p className="mt-4 text-gray-500">Đang tải thông tin...</p>
-                  </div>
-                ) : homes.length === 0 ? (
-              // Không có homes (cho cả admin và customer)
-              user?.role === "customer" ? (
-              // Customer chưa có home
-              // Chỉ hiển thị message này cho customer khi chưa có home
-              <div className="text-center py-12 bg-white rounded-lg shadow">
-                <Home className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Chưa có nhà nào
-                    </h3>
-                {serviceUser?.serviceStatus === "ACTIVE" ? (
-                  <>
-                    <p className="text-gray-500 mb-4">
-                      Dịch vụ của bạn đã được kích hoạt, nhưng nhà của bạn chưa được tạo.
-                    </p>
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 max-w-md mx-auto mb-4">
-                      <p className="text-sm text-yellow-800 mb-2">
-                        <strong>⚠️ Cần hành động:</strong>
-                      </p>
-                      <p className="text-sm text-yellow-800">
-                        Admin cần tạo home cho bạn. Vui lòng liên hệ admin hoặc yêu cầu admin vào trang <strong>Users</strong> và click button <strong>Home icon</strong> (màu tím) để tạo home cho bạn.
-                      </p>
-                  </div>
-                  </>
-                ) : (
-                  <p className="text-gray-500 mb-4">
-                    Nhà của bạn sẽ được tạo tự động sau khi admin kích hoạt dịch vụ. 
-                    Vui lòng đợi trong giây lát hoặc liên hệ admin nếu cần hỗ trợ.
-                  </p>
-                )}
               </div>
-              ) : (
-                // Admin không có homes
-                <div className="text-center py-12 bg-white rounded-lg shadow">
-                  <Home className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    Chưa có nhà nào
-                            </h3>
-                  <p className="text-gray-500">
-                    Bạn chưa có nhà nào trong hệ thống. Vui lòng tạo nhà mới hoặc liên hệ quản trị viên.
-                  </p>
-                            </div>
-              )
-            ) : rooms.length === 0 && homes.length > 0 ? (
-              // Có home nhưng chưa có phòng
+            ) : homes.length === 0 ? (
               <div className="text-center py-12 bg-white rounded-lg shadow">
                 <Home className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Chưa có phòng nào
-                </h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Chưa có nhà nào</h3>
                 <p className="text-gray-500">
-                  Các phòng sẽ được tạo tự động khi hệ thống được cài đặt.
-                            </p>
-                          </div>
-            ) : rooms.length > 0 ? (
-              // Hiển thị rooms với sensor data
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {rooms.map((room) => {
-                  const sensorData = getRoomSensorData(room.id);
-                  return (
-                    <div
-                      key={room.id}
-                      onClick={() => router.push(`/rooms/${room.id}`)}
-                      className="bg-white rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer border-2 border-gray-200 hover:border-blue-400 p-6"
-                    >
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex-1">
-                          <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                            {room.name}
-                          </h3>
-                          <p className="text-sm text-gray-500 capitalize">
-                            {room.type.replace("_", " ")}
-                          </p>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const newName = prompt("Nhập tên mới cho phòng:", room.name);
-                            if (newName && newName.trim()) {
-                              handleRenameRoom(room.id, newName);
-                            }
-                          }}
-                          className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                          title="Chỉnh sửa tên phòng"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </button>
-                      </div>
-                      
-                      <div className="space-y-3">
-                        {sensorData.temperature !== "N/A" && (
-                          <div className="flex items-center space-x-2">
-                            <Thermometer className="h-4 w-4 text-orange-500" />
-                            <span className="text-sm text-gray-700">
-                              Nhiệt độ: <span className="font-semibold">{sensorData.temperature}</span>
-                            </span>
-                  </div>
-                )}
-                        {sensorData.hasMotion !== "N/A" && (
-                          <div className="flex items-center space-x-2">
-                            <Activity className="h-4 w-4 text-blue-500" />
-                            <span className="text-sm text-gray-700">
-                              {sensorData.hasMotion}
-                      </span>
-                    </div>
-                        )}
-                        {sensorData.airQuality && (
-                          <div className="flex items-center space-x-2">
-                            <Eye className="h-4 w-4 text-green-500" />
-                            <span className="text-sm text-gray-700">
-                              Không khí: <span className="font-semibold text-green-600">{sensorData.airQuality}</span>
-                      </span>
-                    </div>
-                        )}
-                      </div>
-                      
-                      <div className="mt-4 pt-4 border-t border-gray-200">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            router.push(`/rooms/${room.id}`);
-                          }}
-                          className="w-full text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center justify-center"
-                        >
-                          Xem chi tiết
-                          <Eye className="h-4 w-4 ml-2" />
-                  </button>
-                      </div>
-                    </div>
-                  );
-                })}
+                  {isAdmin
+                    ? "Bạn chưa có nhà nào trong hệ thống. Vui lòng tạo nhà mới hoặc liên hệ quản trị viên."
+                    : "Nhà của bạn sẽ được tạo sau khi admin kích hoạt dịch vụ."}
+                </p>
               </div>
-            ) : null}
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Homes */}
+            <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-4 hover:shadow-xl transition">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-sm text-gray-500">Homes</p>
+                      <p className="text-lg font-semibold text-gray-900">{homes.length} ngôi nhà</p>
+                    </div>
+                    <Home className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div className="space-y-2">
+                    {homes.map((h) => {
+                      const isSelected = h.id === selectedHomeId;
+                      const roomCount = rooms.filter((r) => r.homeId === h.id).length;
+                  const deviceCount = rooms
+                    .filter((r) => r.homeId === h.id)
+                    .reduce(
+                      (sum, r) => sum + devices.filter((d) => d.roomId === r.id).length,
+                      0
+                    );
+                      return (
+                        <button
+                          key={h.id}
+                          onClick={() => {
+                            setSelectedHomeId(h.id);
+                            const firstRoom = rooms.find((r) => r.homeId === h.id);
+                            setSelectedRoomId(firstRoom ? firstRoom.id : null);
+                          }}
+                      className={`w-full text-left rounded-xl border px-3 py-3 transition ${
+                            isSelected
+                              ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm"
+                              : "border-gray-200 hover:border-blue-300"
+                          }`}
+                        >
+                      <div className="flex items-start justify-between">
+                            <div>
+                              <p className="font-semibold">{h.name || "Unnamed Home"}</p>
+                              <p className="text-xs text-gray-500">{h.address || "Không có địa chỉ"}</p>
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-600">
+                            <span className="px-2 py-1 rounded-full bg-gray-100">{roomCount} phòng</span>
+                            <span className="px-2 py-1 rounded-full bg-gray-100">{deviceCount} thiết bị</span>
+                          </div>
+                        </div>
+                        {isSelected && (
+                          <span className="text-[10px] px-2 py-1 rounded-full bg-blue-100 text-blue-700">Đang xem</span>
+                        )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Rooms */}
+            <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-4 hover:shadow-xl transition">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-sm text-gray-500">Rooms</p>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {rooms.filter((r) => r.homeId === selectedHomeId).length} phòng
+                      </p>
+                    </div>
+                    <DoorOpen className="h-5 w-5 text-indigo-600" />
+                  </div>
+                  {rooms.filter((r) => r.homeId === selectedHomeId).length === 0 ? (
+                    <p className="text-sm text-gray-500">Chưa có phòng cho ngôi nhà này.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {rooms
+                        .filter((r) => r.homeId === selectedHomeId)
+                        .map((room) => {
+                          const isSelected = room.id === selectedRoomId;
+                          const sensorData = getRoomSensorData(room.id);
+                      const deviceCount = devices.filter((d) => d.roomId === room.id).length;
+                          return (
+                            <button
+                              key={room.id}
+                              onClick={() => setSelectedRoomId(room.id)}
+                          className={`w-full text-left rounded-xl border px-3 py-3 transition ${
+                                isSelected
+                                  ? "border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm"
+                                  : "border-gray-200 hover:border-indigo-300"
+                              }`}
+                            >
+                          <div className="flex items-start justify-between">
+                                <div>
+                                  <p className="font-semibold">{room.name}</p>
+                                  <p className="text-xs text-gray-500 capitalize">
+                                    {room.type?.replace("_", " ")}
+                                  </p>
+                              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-gray-600">
+                                <span className="px-2 py-1 rounded-full bg-gray-100">{deviceCount} thiết bị</span>
+                                {sensorData.temperature !== "N/A" && (
+                                  <span className="px-2 py-1 rounded-full bg-orange-50 text-orange-700">
+                                    {sensorData.temperature}
+                                  </span>
+                                )}
+                                {sensorData.hasMotion !== "N/A" && (
+                                  <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">
+                                    {sensorData.hasMotion}
+                                </span>
+                                )}
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <span className="text-[10px] px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">Đang xem</span>
+                            )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Devices */}
+            <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-4 hover:shadow-xl transition">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-sm text-gray-500">Devices</p>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {devices.filter((d) => d.roomId === selectedRoomId).length} thiết bị
+                      </p>
+                    </div>
+                    <Cpu className="h-5 w-5 text-emerald-600" />
+                  </div>
+                  {selectedRoomId ? (
+                    devices.filter((d) => d.roomId === selectedRoomId).length === 0 ? (
+                      <p className="text-sm text-gray-500">Chưa có thiết bị trong phòng này.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {devices
+                          .filter((d) => d.roomId === selectedRoomId)
+                          .map((device) => (
+                            <div
+                              key={device.id}
+                          className="rounded-xl border border-gray-200 px-3 py-2 flex items-center justify-between bg-gray-50"
+                            >
+                              <div>
+                                <p className="font-semibold text-gray-900">{device.name}</p>
+                                <p className="text-xs text-gray-500">
+                                  {device.type || (device as any).deviceType || "Device"}
+                                </p>
+                              </div>
+                          <span
+                            className={`text-[11px] px-2 py-1 rounded-full ${getDeviceStatusBadge(
+                              device.status
+                            )}`}
+                          >
+                            {device.status === "online" ? "Online" : "Offline"}
+                          </span>
+                            </div>
+                          ))}
+                      </div>
+                    )
+                  ) : (
+                    <p className="text-sm text-gray-500">Chọn một phòng để xem thiết bị.</p>
+                  )}
+                </div>
+              </div>
+            )}
 
           </>
         )}
@@ -686,19 +849,13 @@ export default function UserDashboard() {
     </>
   );
 
-  // Use Layout with Sidebar for admin, UserLayout for regular users
-  if (user?.role === "admin") {
-    return (
-      <Layout>
-        <DashboardContent showHeader={false} />
-      </Layout>
-    );
-  }
+  };
 
-  // Customer nhưng chưa có dịch vụ: trong lúc redirect sang /subscribe thì hiển thị loader
+  // Dùng chung Layout (Sidebar + Header) cho cả admin & customer để giao diện nhất quán
+  // Nếu customer chưa có dịch vụ và đang redirect, hiển thị loader trong Layout
   if (user?.role === "customer" && needsSubscription && !isServiceLoading) {
     return (
-      <UserLayout>
+      <Layout>
         <div className="min-h-[60vh] flex items-center justify-center">
           <div className="flex flex-col items-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4" />
@@ -707,13 +864,21 @@ export default function UserDashboard() {
             </p>
           </div>
         </div>
-      </UserLayout>
+      </Layout>
     );
   }
 
   return (
-    <UserLayout>
-      <DashboardContent showHeader={true} />
-    </UserLayout>
+    <Layout>
+      <DashboardContent showHeader={false} />
+    </Layout>
+  );
+}
+
+export default function UserDashboard() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+      <UserDashboardInner />
+    </Suspense>
   );
 }

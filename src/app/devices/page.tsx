@@ -137,9 +137,18 @@ export default function DevicesPage() {
       );
 
       // Validate bắt buộc
-      if (!deviceData.roomId) throw new Error("Room is required (roomId)");
-      if (!deviceData.name) throw new Error("Name is required");
-      if (!deviceData.deviceType) throw new Error("Device type is required");
+      if (!deviceData.roomId || !`${deviceData.roomId}`.trim()) {
+        throw new Error("Phải chọn phòng (RoomId) trước khi tạo thiết bị");
+      }
+      if (isNaN(Number(deviceData.roomId))) {
+        throw new Error("RoomId phải là số hợp lệ");
+      }
+      if (!deviceData.name || !deviceData.name.trim()) {
+        throw new Error("Tên thiết bị là bắt buộc");
+      }
+      if (!deviceData.deviceType || !deviceData.deviceType.trim()) {
+        throw new Error("DeviceType là bắt buộc");
+      }
 
       // Validate roomId exists in rooms list
       const selectedRoom = rooms.find((r) => r.id === deviceData.roomId);
@@ -154,14 +163,11 @@ export default function DevicesPage() {
       }
       console.log("[DevicesPage] Selected room:", selectedRoom);
 
-      // Gán đúng schema BE
-      const payload = {
+      // Gán đúng schema BE - KHÔNG gửi currentState để tránh backend 500 nếu không hỗ trợ
+      const payload: any = {
         roomId: deviceData.roomId, // Keep as string, apiService will convert to number
         name: deviceData.name,
         deviceType: (deviceData.deviceType || "").toUpperCase(),
-        currentState: deviceData.currentState
-          ? deviceData.currentState
-          : undefined,
       };
       console.log("[DevicesPage] Device payload:", payload);
       console.log(
@@ -173,14 +179,47 @@ export default function DevicesPage() {
 
       const newDevice = await apiService.createDevice(payload);
       console.log("[DevicesPage] Device created successfully:", newDevice);
-      setDevices([...devices, newDevice]);
       setShowCreateForm(false);
-      fetchData(); // refresh
+      // Refresh data to get the latest list
+      await fetchData();
     } catch (err: any) {
-      const errorMsg =
-        err?.message || err?.detail || err?.error || "Failed to create device";
-      console.error("[DevicesPage] Error creating device:", errorMsg, err);
+      console.error("[DevicesPage] Error creating device:", err);
+      // Extract detailed error message
+      let errorMsg = "Failed to create device";
+      if (err?.response?.data) {
+        const errorData = err.response.data as any;
+        const firstFieldError = (() => {
+          try {
+            const vals = Object.values(errorData?.errors || {});
+            const first = (vals as any[])?.[0];
+            return Array.isArray(first) ? first[0] : null;
+          } catch {
+            return null;
+          }
+        })();
+        errorMsg =
+          firstFieldError ||
+          errorData?.detail ||
+          errorData?.message ||
+          errorData?.error ||
+          errorMsg;
+      } else if (err?.message) {
+        errorMsg = err.message;
+      } else if (typeof err === "string") {
+        errorMsg = err;
+      }
+
+      const msgLower = errorMsg.toLowerCase();
+      if (msgLower.includes("internal server error")) {
+        errorMsg =
+          "Backend trả lỗi 500 khi tạo thiết bị. Thử bỏ trống CurrentState và kiểm tra RoomId hợp lệ. Nếu vẫn lỗi, cần xem log backend.";
+      } else if (msgLower.includes("bad request")) {
+        errorMsg =
+          "Thông tin thiết bị không hợp lệ. Kiểm tra RoomId (số), Name, DeviceType và thử lại.";
+      }
+
       setError(errorMsg);
+      setTimeout(() => setError(null), 5000);
     }
   };
 
@@ -495,10 +534,17 @@ function CreateDeviceForm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // always send as UPPERCASE
-    onSubmit({
-      ...formData,
+    // Only include currentState if it has a value
+    const submitData: any = {
+      name: formData.name,
       deviceType: (formData.deviceType || "").toUpperCase(),
-    });
+      roomId: formData.roomId,
+    };
+    // Only add currentState if it's not empty
+    if (formData.currentState && formData.currentState.trim() !== "") {
+      submitData.currentState = formData.currentState.trim();
+    }
+    onSubmit(submitData);
   };
 
   return (

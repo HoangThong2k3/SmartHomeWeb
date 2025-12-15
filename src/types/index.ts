@@ -105,12 +105,52 @@ export interface CreateHomeRequest {
   name: string;
   ownerId: string;
   securityStatus?: string;
+  address?: string;
+  description?: string;
+  securityMode?: string;
+  homeType?: string;
+  area?: number;
+  floors?: number;
+  installationDate?: string;
+  installedBy?: string;
+  installationNotes?: string;
 }
 
 export interface UpdateHomeRequest {
   name?: string;
   ownerId?: string;
   securityStatus?: string;
+}
+
+// Detailed Home Profile
+export interface HomeProfile {
+  id: string; // HomeId
+  name: string; // Name
+  ownerId: string; // OwnerId
+  ownerName?: string;
+  ownerEmail?: string;
+  address?: string;
+  description?: string;
+  imageUrl?: string;
+  createdAt: string;
+  securityStatus?: string;
+  securityMode?: string;
+  alertsEnabled?: boolean;
+  temperatureUnit?: string;
+  timezone?: string;
+  theme?: string;
+  installationDate?: string;
+  installedBy?: string;
+  installationNotes?: string;
+  area?: number;
+  floors?: number;
+  homeType?: string;
+  adminNotes?: string;
+  tags?: string[];
+  totalRooms?: number;
+  totalDevices?: number;
+  activeAutomations?: number;
+  faceProfiles?: number;
 }
 
 // Room Types
@@ -439,6 +479,25 @@ export interface PaymentConfirmationResponse {
   errors?: string[] | null;
 }
 
+// Admin Device Mapping (Provisioning)
+export interface DeviceMapping {
+  id: number;
+  deviceId: number;
+  deviceName?: string;
+  hardwareIdentifier?: string;
+  nodeIdentifier?: string;
+  homeKey?: string;
+  description?: string;
+  createdAt: string;
+}
+
+export interface CreateDeviceMappingRequest {
+  DeviceId: number;
+  HomeKey: string;
+  NodeId: string;
+  Description?: string;
+}
+
 // Request types for Admin
 export interface CreateCustomPaymentBillRequest {
   userId: number; // Maps to UserId
@@ -469,4 +528,33 @@ export interface CreateSupportRequestRequest {
 
 export interface UpdateSupportRequestStatusRequest {
   status: "PENDING" | "CONTACTED" | "RESOLVED" | "CLOSED"; // Status
+}
+
+// Admin Dashboard Stats
+export interface StatsSummary {
+  totalRevenue: number;
+  totalUsers: number;
+  activeSubscribers: number;
+  totalHomes: number;
+  totalRooms: number;
+  totalDevices: number;
+  pendingSupportRequests: number;
+}
+
+export interface RevenuePoint {
+  month: number;
+  revenue: number;
+  monthName: string;
+}
+
+export interface RecentTransaction {
+  paymentId: number;
+  userId: number;
+  userEmail: string;
+  userName: string;
+  amount: number;
+  currency: string;
+  method: string;
+  description: string;
+  createdAt: string;
 }

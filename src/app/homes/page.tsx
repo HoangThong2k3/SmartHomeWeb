@@ -7,11 +7,13 @@ import { ServiceGuard } from "@/components/auth/ServiceGuard";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiService } from "@/services/api";
 import { useServiceAccess } from "@/hooks/useServiceAccess";
-import { Home } from "@/types";
-import { Building2, Plus, Edit, Trash2, Users } from "lucide-react";
+import { Home, HomeProfile } from "@/types";
+import { Building2, Plus, Edit, Trash2, Users, Eye } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 export default function HomesPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const isAdmin = user?.role === "admin";
   const isCustomer = user?.role === "customer";
   const {
@@ -19,6 +21,9 @@ export default function HomesPage() {
     isLoading: isServiceLoading,
   } = useServiceAccess();
   const [homes, setHomes] = useState<Home[]>([]);
+  const [homeProfiles, setHomeProfiles] = useState<Record<string, HomeProfile>>(
+    {}
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -43,6 +48,20 @@ export default function HomesPage() {
         ? await apiService.getAllHomes()
         : await apiService.getMyHomes();
       setHomes(userHomes);
+
+      // Fetch profile (counts) for each home to show Rooms/Devices totals
+      const profiles: Record<string, HomeProfile> = {};
+      await Promise.all(
+        (userHomes || []).map(async (h) => {
+          try {
+            const p = await apiService.getHomeProfile(h.id);
+            profiles[h.id] = p;
+          } catch (e) {
+            console.warn("Could not load home profile for", h.id, e);
+          }
+        })
+      );
+      setHomeProfiles(profiles);
     } catch (err: any) {
       setError(err.message || "Failed to load homes");
     } finally {
@@ -68,11 +87,24 @@ export default function HomesPage() {
       if (!derivedOwnerId) {
         throw new Error("OwnerId is required to create a home.");
       }
+      if (isNaN(Number(derivedOwnerId))) {
+        throw new Error("OwnerId must be a valid number.");
+      }
+      if (!homeData.address || !homeData.address.trim()) {
+        throw new Error("Address is required.");
+      }
 
       const newHome = await apiService.createHome({
         name: homeData.name,
         ownerId: derivedOwnerId,
         securityStatus: homeData.securityStatus || "DISARMED",
+        address: homeData.address,
+        homeType: homeData.homeType || undefined,
+        area: homeData.area ? Number(homeData.area) : undefined,
+        floors: homeData.floors ? Number(homeData.floors) : undefined,
+        installationDate: homeData.installationDate || undefined,
+        installedBy: homeData.installedBy || undefined,
+        installationNotes: homeData.installationNotes || undefined,
       });
       
       await fetchHomes(); // Refresh to get latest data
@@ -267,7 +299,7 @@ export default function HomesPage() {
                       <Users className="w-4 h-4 mr-1" />
                       <span>Owner ID: {home.ownerId || "Unknown"}</span>
                     </div>
-                    <div className="flex items-center text-sm">
+                    <div className="flex flex-wrap items-center text-sm gap-3">
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-medium ${
                           home.securityStatus === "ARMED"
@@ -277,9 +309,31 @@ export default function HomesPage() {
                       >
                         {home.securityStatus || "DISARMED"}
                       </span>
+                      <span className="text-gray-600">
+                        {(homeProfiles[home.id]?.totalRooms ?? "—") + " phòng"}
+                      </span>
+                      <span className="text-gray-600">
+                        {(homeProfiles[home.id]?.totalDevices ?? "—") + " thiết bị"}
+                      </span>
                     </div>
                   </div>
                   <div className="flex space-x-2">
+                    <button
+                      onClick={() => router.push(`/homes/${home.id}`)}
+                      className="text-blue-600 hover:text-blue-800 flex items-center text-sm"
+                      title="Xem chi tiết Home profile"
+                    >
+                      <Eye className="w-4 h-4 mr-1" />
+                      Details
+                    </button>
+                    <button
+                      onClick={() => router.push(`/user-dashboard?homeId=${home.id}`)}
+                      className="text-blue-600 hover:text-blue-800 flex items-center text-sm"
+                      title="Xem phòng và thiết bị"
+                    >
+                      <Eye className="w-4 h-4 mr-1" />
+                      Dashboard
+                    </button>
                     {isCustomer && (
                       <button
                         onClick={() => setEditingHome(home)}
@@ -340,6 +394,13 @@ function CreateHomeForm({
     name: "",
     securityStatus: "DISARMED",
     ownerId: "",
+    address: "", // required by backend
+    homeType: "",
+    area: "",
+    floors: "",
+    installationDate: "",
+    installedBy: "",
+    installationNotes: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -405,6 +466,108 @@ function CreateHomeForm({
               <option value="DISARMED">Disarmed</option>
               <option value="ARMED">Armed</option>
             </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Address <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.address}
+              onChange={(e) =>
+                setFormData({ ...formData, address: e.target.value })
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Số nhà, đường, quận/huyện..."
+              required
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Home Type
+              </label>
+              <input
+                type="text"
+                value={formData.homeType}
+                onChange={(e) =>
+                  setFormData({ ...formData, homeType: e.target.value })
+                }
+                placeholder="Apartment / Villa / House..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Floors
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={formData.floors}
+                onChange={(e) =>
+                  setFormData({ ...formData, floors: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Area (m²)
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={formData.area}
+                onChange={(e) =>
+                  setFormData({ ...formData, area: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Installation Date
+              </label>
+              <input
+                type="datetime-local"
+                value={formData.installationDate}
+                onChange={(e) =>
+                  setFormData({ ...formData, installationDate: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Installed By
+              </label>
+              <input
+                type="text"
+                value={formData.installedBy}
+                onChange={(e) =>
+                  setFormData({ ...formData, installedBy: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Installation Notes
+              </label>
+              <input
+                type="text"
+                value={formData.installationNotes}
+                onChange={(e) =>
+                  setFormData({ ...formData, installationNotes: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
           </div>
           <div className="flex space-x-3 pt-4">
             <button

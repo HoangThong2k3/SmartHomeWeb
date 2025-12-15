@@ -59,17 +59,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({
       // Force redirect immediately - no timeout needed
       const raw = localStorage.getItem("user");
       console.log("Raw user data from localStorage:", raw);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        console.log("Parsed user data:", parsed);
-        console.log("User role:", parsed?.role);
-        // Both admin and user go to user-dashboard
-        console.log("Redirecting to user dashboard");
-        window.location.href = "/user-dashboard";
-      } else {
-        console.log("No user data, redirecting to dashboard");
-        window.location.href = "/user-dashboard";
-      }
+      const parsed = raw ? JSON.parse(raw) : null;
+      const role = (parsed?.role || "").toString().toLowerCase();
+      const dest = role === "admin" ? "/admin" : "/user-dashboard";
+      window.location.href = dest;
     } catch (error: any) {
       setError(error.message || "Login failed. Please try again.");
     } finally {
@@ -117,7 +110,11 @@ export const LoginForm: React.FC<LoginFormProps> = ({
               return;
             }
             await loginWithGoogle(idToken);
-            window.location.href = "/user-dashboard";
+            const raw = localStorage.getItem("user");
+            const parsed = raw ? JSON.parse(raw) : null;
+            const role = (parsed?.role || "").toString().toLowerCase();
+            const dest = role === "admin" ? "/admin" : "/user-dashboard";
+            window.location.href = dest;
           } catch (err: any) {
             setError(err?.message || "Google login failed. Please try again.");
             setIsLoading(false);

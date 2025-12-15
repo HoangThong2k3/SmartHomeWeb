@@ -9,6 +9,7 @@ import {
   CreateUserRequest,
   UpdateUserRequest,
   Home,
+  HomeProfile,
   CreateHomeRequest,
   UpdateHomeRequest,
   Room,
@@ -42,6 +43,11 @@ import {
   SupportRequest,
   CreateSupportRequestRequest,
   UpdateSupportRequestStatusRequest,
+  StatsSummary,
+  RevenuePoint,
+  RecentTransaction,
+  DeviceMapping,
+  CreateDeviceMappingRequest,
 } from "@/types";
 
 // Base URL cho backend, ưu tiên lấy từ biến môi trường NEXT_PUBLIC_API_URL
@@ -148,6 +154,47 @@ class ApiService {
       securityStatus,
       createdAt,
       updatedAt,
+    };
+  }
+
+  private mapHomeProfileFromApi(api: any): HomeProfile {
+    return {
+      id:
+        api?.HomeId?.toString() ??
+        api?.homeId?.toString() ??
+        api?.Id?.toString() ??
+        api?.id?.toString() ??
+        "",
+      name: api?.Name ?? api?.name ?? "Unnamed Home",
+      ownerId: (api?.OwnerId ?? api?.ownerId ?? api?.UserId ?? api?.userId ?? "0").toString(),
+      ownerName: api?.OwnerName ?? api?.ownerName,
+      ownerEmail: api?.OwnerEmail ?? api?.ownerEmail,
+      address: api?.Address ?? api?.address,
+      description: api?.Description ?? api?.description,
+      imageUrl: api?.ImageUrl ?? api?.imageUrl,
+      createdAt:
+        api?.CreatedAt ??
+        api?.createdAt ??
+        api?.created_at ??
+        new Date().toISOString(),
+      securityStatus: api?.SecurityStatus ?? api?.securityStatus,
+      securityMode: api?.SecurityMode ?? api?.securityMode,
+      alertsEnabled: api?.AlertsEnabled ?? api?.alertsEnabled,
+      temperatureUnit: api?.TemperatureUnit ?? api?.temperatureUnit,
+      timezone: api?.Timezone ?? api?.timezone,
+      theme: api?.Theme ?? api?.theme,
+      installationDate: api?.InstallationDate ?? api?.installationDate,
+      installedBy: api?.InstalledBy ?? api?.installedBy,
+      installationNotes: api?.InstallationNotes ?? api?.installationNotes,
+      area: api?.Area ?? api?.area,
+      floors: api?.Floors ?? api?.floors,
+      homeType: api?.HomeType ?? api?.homeType,
+      adminNotes: api?.AdminNotes ?? api?.adminNotes,
+      tags: api?.Tags ?? api?.tags ?? [],
+      totalRooms: api?.TotalRooms ?? api?.totalRooms,
+      totalDevices: api?.TotalDevices ?? api?.totalDevices,
+      activeAutomations: api?.ActiveAutomations ?? api?.activeAutomations,
+      faceProfiles: api?.FaceProfiles ?? api?.faceProfiles,
     };
   }
 
@@ -1214,6 +1261,78 @@ class ApiService {
     return this.mapHomeFromApi(data);
   }
 
+  async getHomeProfile(id: string): Promise<HomeProfile> {
+    // Dùng proxy để tránh CORS khi gọi từ client
+    const data = await this.requestViaProxy<any>(`/Homes/${id}/profile`);
+
+    // Nếu backend trả về HTML lỗi (403 / stopped), ném lỗi thân thiện
+    const messageStr =
+      typeof data === "string"
+        ? data
+        : typeof data?.message === "string"
+        ? data.message
+        : "";
+    const looksLikeHtml =
+      messageStr.toLowerCase().includes("<html") ||
+      (typeof data === "string" && data.toLowerCase().includes("<html"));
+    const hasHomeId =
+      typeof data === "object" &&
+      data !== null &&
+      (data.HomeId !== undefined || data.homeId !== undefined);
+
+    if (looksLikeHtml || !hasHomeId) {
+      throw new Error(
+        "Không truy cập được Home profile (có thể backend đang dừng hoặc bị chặn quyền)."
+      );
+    }
+
+    return this.mapHomeProfileFromApi(data);
+  }
+
+  // Admin Device Mappings (Provisioning)
+  async getDeviceMappings(): Promise<DeviceMapping[]> {
+    // Gọi trực tiếp backend giống như Swagger (đã cấu hình CORS cho http://localhost:3000)
+    const list = await this.request<any[]>(`/admin/mappings`);
+
+    return (list || []).map((m) => ({
+      id: m?.Id ?? m?.id ?? 0,
+      deviceId: m?.DeviceId ?? m?.deviceId ?? 0,
+      deviceName: m?.DeviceName ?? m?.deviceName,
+      hardwareIdentifier: m?.HardwareIdentifier ?? m?.hardwareIdentifier,
+      nodeIdentifier: m?.NodeIdentifier ?? m?.nodeIdentifier,
+      homeKey: m?.HomeKey ?? m?.homeKey,
+      description: m?.Description ?? m?.description,
+      createdAt: m?.CreatedAt ?? m?.createdAt ?? new Date().toISOString(),
+    }));
+  }
+
+  async createDeviceMapping(payload: CreateDeviceMappingRequest): Promise<DeviceMapping> {
+    const body = {
+      DeviceId: payload.DeviceId,
+      HomeKey: payload.HomeKey,
+      NodeId: payload.NodeId,
+      Description: payload.Description,
+    };
+    const created = await this.request<any>(`/admin/mappings`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return {
+      id: created?.Id ?? created?.id ?? 0,
+      deviceId: created?.DeviceId ?? created?.deviceId ?? payload.DeviceId,
+      deviceName: created?.DeviceName ?? created?.deviceName,
+      hardwareIdentifier: created?.HardwareIdentifier ?? created?.hardwareIdentifier,
+      nodeIdentifier: created?.NodeIdentifier ?? created?.nodeIdentifier,
+      homeKey: created?.HomeKey ?? created?.homeKey ?? payload.HomeKey,
+      description: created?.Description ?? created?.description ?? payload.Description,
+      createdAt: created?.CreatedAt ?? created?.createdAt ?? new Date().toISOString(),
+    };
+  }
+
+  async deleteDeviceMapping(id: number): Promise<void> {
+    await this.request<void>(`/admin/mappings/${id}`, { method: "DELETE" });
+  }
+
   // Admin: get all homes in the system
   async getAllHomes(): Promise<Home[]> {
     const list = await this.request<any[]>(`"/Homes"`.replace(/"/g, ""));
@@ -1305,10 +1424,28 @@ class ApiService {
 
   async createHome(homeData: CreateHomeRequest): Promise<Home> {
     // Convert camelCase to PascalCase for backend
+    const ownerIdNum = parseInt(homeData.ownerId);
+    if (!Number.isFinite(ownerIdNum) || ownerIdNum <= 0) {
+      throw new Error("OwnerId is required and must be a valid number");
+    }
+
     const payload = {
       Name: homeData.name,
-      OwnerId: parseInt(homeData.ownerId),
+      OwnerId: ownerIdNum,
       SecurityStatus: homeData.securityStatus || "DISARMED",
+      ...(homeData.address ? { Address: homeData.address } : {}),
+      ...(homeData.description ? { Description: homeData.description } : {}),
+      ...(homeData.securityMode ? { SecurityMode: homeData.securityMode } : {}),
+      ...(homeData.homeType ? { HomeType: homeData.homeType } : {}),
+      ...(homeData.area !== undefined ? { Area: homeData.area } : {}),
+      ...(homeData.floors !== undefined ? { Floors: homeData.floors } : {}),
+      ...(homeData.installationDate
+        ? { InstallationDate: homeData.installationDate }
+        : {}),
+      ...(homeData.installedBy ? { InstalledBy: homeData.installedBy } : {}),
+      ...(homeData.installationNotes
+        ? { InstallationNotes: homeData.installationNotes }
+        : {}),
     };
     const created = await this.request<any>("/Homes", {
       method: "POST",
@@ -1564,6 +1701,23 @@ class ApiService {
     }
   }
 
+  // Điều khiển thiết bị qua endpoint control (Downlink)
+  async controlDevice(
+    id: string,
+    payload: { action: string; value?: string }
+  ): Promise<void> {
+    const body: any = {
+      Action: payload.action,
+    };
+    if (payload.value !== undefined) {
+      body.Value = payload.value;
+    }
+    await this.request<void>(`/Devices/${id}/control`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
   // Automations Management APIs
   async getAutomationsByHome(homeId: string): Promise<Automation[]> {
     console.log("[API] getAutomationsByHome - homeId:", homeId);
@@ -1581,6 +1735,11 @@ class ApiService {
       );
       throw error;
     }
+  }
+
+  async getAutomationById(id: string): Promise<Automation> {
+    const data = await this.request<any>(`/Automations/${id}`);
+    return this.mapAutomationFromApi(data);
   }
 
   async createAutomation(
@@ -1682,6 +1841,12 @@ class ApiService {
       console.error("[API] deleteAutomation - error:", error?.message || error);
       throw error;
     }
+  }
+
+  async toggleAutomation(id: string): Promise<void> {
+    await this.request<void>(`/Automations/${id}/toggle`, {
+      method: "PATCH",
+    });
   }
 
   // Sensor Data Management APIs
@@ -1893,6 +2058,48 @@ class ApiService {
       isActive: api?.IsActive ?? api?.isActive ?? false,
       createdAt: api?.CreatedAt || api?.createdAt || new Date().toISOString(),
     };
+  }
+
+  // Admin Stats APIs
+  async getStatsSummary(): Promise<StatsSummary> {
+    const data = await this.request<any>("/Stats/summary");
+    return {
+      totalRevenue: data?.TotalRevenue ?? data?.totalRevenue ?? 0,
+      totalUsers: data?.TotalUsers ?? data?.totalUsers ?? 0,
+      activeSubscribers: data?.ActiveSubscribers ?? data?.activeSubscribers ?? 0,
+      totalHomes: data?.TotalHomes ?? data?.totalHomes ?? 0,
+      totalRooms: data?.TotalRooms ?? data?.totalRooms ?? 0,
+      totalDevices: data?.TotalDevices ?? data?.totalDevices ?? 0,
+      pendingSupportRequests:
+        data?.PendingSupportRequests ?? data?.pendingSupportRequests ?? 0,
+    };
+  }
+
+  async getRevenueChart(year?: number): Promise<RevenuePoint[]> {
+    const query = year ? `?year=${year}` : "";
+    const list = await this.request<any[]>(`/Stats/revenue-chart${query}`);
+    return (list || []).map((item) => ({
+      month: item?.Month ?? item?.month ?? 0,
+      revenue: item?.Revenue ?? item?.revenue ?? 0,
+      monthName: item?.MonthName ?? item?.monthName ?? "",
+    }));
+  }
+
+  async getRecentTransactions(count: number = 5): Promise<RecentTransaction[]> {
+    const list = await this.request<any[]>(
+      `/Stats/recent-transactions?count=${count}`
+    );
+    return (list || []).map((t) => ({
+      paymentId: t?.PaymentId ?? t?.paymentId ?? 0,
+      userId: t?.UserId ?? t?.userId ?? 0,
+      userEmail: t?.UserEmail ?? t?.userEmail ?? "",
+      userName: t?.UserName ?? t?.userName ?? "",
+      amount: t?.Amount ?? t?.amount ?? 0,
+      currency: t?.Currency ?? t?.currency ?? "VND",
+      method: t?.Method ?? t?.method ?? "",
+      description: t?.Description ?? t?.description ?? "",
+      createdAt: t?.CreatedAt ?? t?.createdAt ?? new Date().toISOString(),
+    }));
   }
 
   private mapPaymentLinkResponseFromApi(api: any): PaymentLinkResponse {

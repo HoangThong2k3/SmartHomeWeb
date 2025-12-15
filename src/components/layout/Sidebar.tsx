@@ -16,15 +16,25 @@ import {
   CreditCard,
   Package,
   MessageSquare,
+  BarChart3,
+  Link as LinkIcon,
 } from "lucide-react";
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { user } = useAuth();
 
+  // Chọn đích đến phù hợp thay vì quay lại landing (có form đăng nhập)
+  const logoHref =
+    (user?.role || "").toLowerCase() === "admin"
+      ? "/admin"
+      : user
+      ? "/user-dashboard"
+      : "/";
+
   // Menu items based on user role
   const getMenuItems = () => {
-    const baseItems = [
+    let baseItems = [
       { name: "Dashboard", href: "/user-dashboard", icon: Home },
       { name: "Homes", href: "/homes", icon: Building2 },
       { name: "Rooms", href: "/rooms", icon: DoorOpen },
@@ -36,10 +46,20 @@ export default function Sidebar() {
 
     // Admin only items
     if (user?.role === "admin") {
-      baseItems.splice(1, 0, { name: "Users", href: "/users", icon: Users });
-      baseItems.splice(2, 0, { name: "Admin Payments", href: "/admin/payments", icon: CreditCard });
-      baseItems.splice(3, 0, { name: "Service Packages", href: "/admin/packages", icon: Package });
-      baseItems.splice(4, 0, { name: "Support Requests", href: "/admin/support-requests", icon: MessageSquare });
+      // Loại bỏ menu dành cho customer (dashboard khách, payments khách)
+      baseItems = baseItems.filter(
+        (item) => !["/user-dashboard", "/payments"].includes(item.href)
+      );
+
+      // Thêm lại user dashboard cho admin (để quay về giao diện user)
+      
+
+      baseItems.splice(1, 0, { name: "Admin Dashboard", href: "/admin", icon: BarChart3 });
+      baseItems.splice(2, 0, { name: "Users Management", href: "/users", icon: Users });
+      baseItems.splice(3, 0, { name: "Admin Payments", href: "/admin/payments", icon: CreditCard });
+      baseItems.splice(4, 0, { name: "Service Packages", href: "/admin/packages", icon: Package });
+      baseItems.splice(5, 0, { name: "Support Requests", href: "/admin/support-requests", icon: MessageSquare });
+      baseItems.splice(6, 0, { name: "Device Provisioning", href: "/admin/device-mappings", icon: LinkIcon });
     }
 
     // Add system pages
@@ -59,7 +79,7 @@ export default function Sidebar() {
     <div className="w-64 bg-white shadow-lg h-full">
       {/* Logo */}
       <div className="p-4 border-b border-gray-200">
-        <Link href="/" className="block">
+        <Link href={logoHref} className="block" prefetch={false}>
           <h1 className="text-xl font-bold text-gray-800 hover:text-blue-600 transition-colors cursor-pointer">🏠 SmartHome</h1>
           <p className="text-sm text-gray-500">Management System</p>
         </Link>
