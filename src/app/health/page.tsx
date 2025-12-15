@@ -299,29 +299,29 @@ export default function HealthPage() {
             <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4">
               <SummaryCard
                 title="Homes"
-                value={stats.totalHomes}
-                subtitle={`${stats.totalRooms} rooms`}
+                value={stats.TotalHomes}
+                subtitle={`${stats.TotalRooms} rooms`}
                 icon={<Home className="w-5 h-5 text-blue-700" />}
                 accent="blue"
               />
               <SummaryCard
                 title="Devices"
-                value={stats.totalDevices}
-                subtitle={`${stats.ActiveDevices ?? stats.activeDevices ?? 0} active`}
+                value={stats.TotalDevices}
+                subtitle={`${stats.ActiveDevices} active`}
                 icon={<Cpu className="w-5 h-5 text-emerald-700" />}
                 accent="green"
               />
               <SummaryCard
                 title="Users"
-                value={stats.totalUsers}
-                subtitle={`${stats.activeUsers} active`}
+                value={stats.TotalUsers}
+                subtitle={`${stats.ActiveUsers} active`}
                 icon={<Users className="w-5 h-5 text-purple-700" />}
                 accent="purple"
               />
               <SummaryCard
                 title="Automations"
-                value={stats.totalAutomations}
-                subtitle={`${stats.totalSensorDataRecords} sensor records`}
+                value={stats.TotalAutomations}
+                subtitle={`${stats.TotalSensorDataRecords} sensor records`}
                 icon={<BarChart3 className="w-5 h-5 text-sky-700" />}
                 accent="blue"
               />

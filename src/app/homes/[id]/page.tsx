@@ -176,15 +176,6 @@ export default function HomeDetailPage() {
                           {new Date(home.createdAt || "").toLocaleString("vi-VN")}
                         </span>
                       </div>
-                      {home.updatedAt && (
-                        <div className="flex items-center text-gray-600">
-                          <Clock className="w-4 h-4 mr-2" />
-                          <span>
-                            Cập nhật:{" "}
-                            {new Date(home.updatedAt || "").toLocaleString("vi-VN")}
-                          </span>
-                        </div>
-                      )}
                       <div className="flex flex-wrap gap-2 mt-2">
                         {home.homeType && (
                           <span className="px-2 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-medium">

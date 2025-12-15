@@ -310,14 +310,10 @@ export default function HomesPage() {
                         {home.securityStatus || "DISARMED"}
                       </span>
                       <span className="text-gray-600">
-                        {(homeProfiles[home.id]?.totalRooms ??
-                          homeProfiles[home.id]?.TotalRooms ??
-                          "—") + " phòng"}
+                        {(homeProfiles[home.id]?.totalRooms ?? "—") + " phòng"}
                       </span>
                       <span className="text-gray-600">
-                        {(homeProfiles[home.id]?.totalDevices ??
-                          homeProfiles[home.id]?.TotalDevices ??
-                          "—") + " thiết bị"}
+                        {(homeProfiles[home.id]?.totalDevices ?? "—") + " thiết bị"}
                       </span>
                     </div>
                   </div>
