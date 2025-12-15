@@ -1,18 +1,20 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Layout from "@/components/layout/Layout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { ServiceGuard } from "@/components/auth/ServiceGuard";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiService } from "@/services/api";
 import { useServiceAccess } from "@/hooks/useServiceAccess";
-import { Room, Home } from "@/types";
-import { DoorOpen, Plus, Edit, Trash2, Building2 } from "lucide-react";
+import { Room, Home, Device } from "@/types";
+import { DoorOpen, Plus, Edit, Trash2, Building2, Eye } from "lucide-react";
 import HomeSelector from "@/components/ui/HomeSelector";
 
 export default function RoomsPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const isAdmin = user?.role === "admin";
   const {
     isActive: canUseService,
@@ -20,6 +22,9 @@ export default function RoomsPage() {
   } = useServiceAccess();
   const [rooms, setRooms] = useState<Room[]>([]);
   const [homes, setHomes] = useState<Home[]>([]);
+  const [roomDeviceStats, setRoomDeviceStats] = useState<
+    Record<string, { total: number; online: number }>
+  >({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -60,6 +65,24 @@ export default function RoomsPage() {
         }
       }
       setRooms(allRooms);
+
+      // Fetch device stats per room (total & online)
+      const stats: Record<string, { total: number; online: number }> = {};
+      await Promise.all(
+        allRooms.map(async (r) => {
+          try {
+            const devices = await apiService.getDevicesByRoom(r.id);
+            const total = devices.length;
+            const online = devices.filter(
+              (d) => (d as Device).status === "online"
+            ).length;
+            stats[r.id] = { total, online };
+          } catch (err) {
+            stats[r.id] = { total: 0, online: 0 };
+          }
+        })
+      );
+      setRoomDeviceStats(stats);
     } catch (err: any) {
       setError(err.message || "Failed to load rooms");
     } finally {
@@ -225,10 +248,14 @@ export default function RoomsPage() {
                       <Building2 className="w-4 h-4 mr-1" />
                       {getHomeName(room.homeId)}
                     </div>
-                    <div className="flex items-center text-sm text-gray-500 mb-2">
-                      {/* Type removed from UI */}
+                    <div className="flex items-center text-sm text-gray-700 gap-3 mb-2">
+                      <span className="px-2 py-1 rounded-full bg-gray-100">
+                        {roomDeviceStats[room.id]?.total ?? "—"} thiết bị
+                      </span>
+                      <span className="px-2 py-1 rounded-full bg-green-50 text-green-700">
+                        {roomDeviceStats[room.id]?.online ?? "—"} online
+                      </span>
                     </div>
-                    {/* Badge for type removed */}
                   </div>
                   <div className="flex space-x-2">
                     {!isAdmin && (
@@ -277,6 +304,14 @@ export default function RoomsPage() {
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
+                    <button
+                      onClick={() => router.push(`/rooms/${room.id}`)}
+                      className="text-blue-600 hover:text-blue-800 flex items-center text-sm"
+                      title="Xem chi tiết phòng"
+                    >
+                      <Eye className="w-4 h-4 mr-1" />
+                      Chi tiết
+                    </button>
                   </div>
                 </div>
               </div>

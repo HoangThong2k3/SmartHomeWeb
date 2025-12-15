@@ -122,6 +122,37 @@ export interface UpdateHomeRequest {
   securityStatus?: string;
 }
 
+// Detailed Home Profile
+export interface HomeProfile {
+  id: string; // HomeId
+  name: string; // Name
+  ownerId: string; // OwnerId
+  ownerName?: string;
+  ownerEmail?: string;
+  address?: string;
+  description?: string;
+  imageUrl?: string;
+  createdAt: string;
+  securityStatus?: string;
+  securityMode?: string;
+  alertsEnabled?: boolean;
+  temperatureUnit?: string;
+  timezone?: string;
+  theme?: string;
+  installationDate?: string;
+  installedBy?: string;
+  installationNotes?: string;
+  area?: number;
+  floors?: number;
+  homeType?: string;
+  adminNotes?: string;
+  tags?: string[];
+  totalRooms?: number;
+  totalDevices?: number;
+  activeAutomations?: number;
+  faceProfiles?: number;
+}
+
 // Room Types
 export interface Room {
   id: string;
@@ -446,6 +477,25 @@ export interface PaymentConfirmationResponse {
   serviceStatus?: string;
   paymentId?: number;
   errors?: string[] | null;
+}
+
+// Admin Device Mapping (Provisioning)
+export interface DeviceMapping {
+  id: number;
+  deviceId: number;
+  deviceName?: string;
+  hardwareIdentifier?: string;
+  nodeIdentifier?: string;
+  homeKey?: string;
+  description?: string;
+  createdAt: string;
+}
+
+export interface CreateDeviceMappingRequest {
+  DeviceId: number;
+  HomeKey: string;
+  NodeId: string;
+  Description?: string;
 }
 
 // Request types for Admin

@@ -5,7 +5,8 @@ import Layout from "@/components/layout/Layout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiService } from "@/services/api";
-import { Activity, CheckCircle, XCircle, AlertTriangle, RefreshCw, Server, Database, Clock } from "lucide-react";
+import { Activity, CheckCircle, XCircle, AlertTriangle, RefreshCw, Server, Database, Clock, BarChart3, Cpu, Home, Users } from "lucide-react";
+import { SystemStats } from "@/types";
 
 export default function HealthPage() {
   const { user } = useAuth();
@@ -13,13 +14,14 @@ export default function HealthPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [stats, setStats] = useState<SystemStats | null>(null);
 
   const fetchHealthData = async () => {
     setIsLoading(true);
     setError(null);
     console.log('[HealthPage] Fetching health data for user:', user?.id, 'role:', user?.role);
     
-    const newHealthData: any = { live: null, ready: null, info: null };
+    const newHealthData: any = { live: null, ready: null, info: null, stats: null };
     const errors: string[] = [];
     const extractStatus = (obj: any) => obj?.Status ?? obj?.status ?? "Unknown";
 
@@ -63,6 +65,19 @@ export default function HealthPage() {
         errors.push('System info requires authentication');
       } else {
         errors.push(`System info failed: ${err?.message || 'Unknown error'}`);
+      }
+    }
+
+    // Fetch system stats (admin only)
+    if (user?.role === "admin") {
+      try {
+        const s = await apiService.getHealthStats();
+        console.log("[HealthPage] Stats received:", s);
+        newHealthData.stats = s;
+        setStats(s);
+      } catch (err: any) {
+        console.error("[HealthPage] Error fetching stats:", err);
+        errors.push(`Stats failed: ${err?.message || "Unknown error"}`);
       }
     }
 
@@ -117,6 +132,42 @@ export default function HealthPage() {
       default:
         return "text-gray-600 bg-gray-100";
     }
+  };
+
+  const SummaryCard = ({
+    title,
+    value,
+    subtitle,
+    icon,
+    accent,
+  }: {
+    title: string;
+    value: React.ReactNode;
+    subtitle?: string;
+    icon: React.ReactNode;
+    accent: "green" | "blue" | "purple" | "slate";
+  }) => {
+    const accentClasses: Record<string, string> = {
+      green: "from-emerald-500/10 via-emerald-500/5 to-transparent",
+      blue: "from-sky-500/10 via-sky-500/5 to-transparent",
+      purple: "from-violet-500/10 via-violet-500/5 to-transparent",
+      slate: "from-slate-500/10 via-slate-500/5 to-transparent",
+    };
+    return (
+      <div className="relative overflow-hidden rounded-2xl bg-white/80 backdrop-blur border border-slate-100 shadow-sm hover:shadow-lg transition-all">
+        <div className={`absolute inset-0 bg-gradient-to-br ${accentClasses[accent]} pointer-events-none`} />
+        <div className="relative px-4 py-4 flex items-center justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-500">{title}</p>
+            <p className="text-xl font-semibold text-slate-900 mt-1">{value}</p>
+            {subtitle && <p className="text-xs text-slate-500 mt-1">{subtitle}</p>}
+          </div>
+          <div className="h-10 w-10 rounded-xl bg-slate-900/5 flex items-center justify-center text-slate-700">
+            {icon}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const formatUptime = (seconds: number) => {
@@ -196,63 +247,86 @@ export default function HealthPage() {
   return (
     <ProtectedRoute>
       <Layout>
-        <div className="mb-8">
-          <div className="flex justify-between items-center">
+        <div className="mb-8 bg-gradient-to-br from-slate-50 via-white to-blue-50 -m-6 p-6">
+          <div className="flex justify-between items-center flex-wrap gap-4">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">System Health</h1>
-              <p className="text-gray-600 mt-2">
-                Monitor system status and performance
+              <h1 className="text-3xl md:text-4xl font-bold text-slate-900">System Health</h1>
+              <p className="text-slate-600 mt-2 text-sm md:text-base">
+                Monitor system status, readiness và hiệu năng của SmartHome platform.
               </p>
             </div>
             <button
               onClick={fetchHealthData}
               disabled={isLoading}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center"
+              className="inline-flex items-center px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium shadow-sm hover:bg-blue-700 disabled:opacity-50"
             >
-              <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
               Refresh
             </button>
           </div>
-        </div>
 
-        {/* Quick summary cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Live</p>
-                <p className="text-lg font-semibold text-gray-900">
-                  {getStatusValue(healthData?.live)}
-                </p>
-              </div>
-              {getStatusIcon(getStatusValue(healthData?.live))}
-            </div>
+          {/* Quick summary cards */}
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <SummaryCard
+              title="Live"
+              value={getStatusValue(healthData?.live)}
+              subtitle="Liveness check"
+              icon={getStatusIcon(getStatusValue(healthData?.live))}
+              accent="green"
+            />
+            <SummaryCard
+              title="Ready"
+              value={healthData?.ready ? getStatusValue(healthData?.ready) : "N/A"}
+              subtitle="Readiness (dependencies)"
+              icon={getStatusIcon(getStatusValue(healthData?.ready))}
+              accent="blue"
+            />
+            <SummaryCard
+              title="Environment"
+              value={meta?.environment || "Unknown"}
+              subtitle={
+                meta?.uptimeSeconds !== undefined
+                  ? `Uptime: ${formatUptime(meta.uptimeSeconds)}`
+                  : "Uptime: N/A"
+              }
+              icon={<Clock className="w-5 h-5 text-slate-700" />}
+              accent="slate"
+            />
           </div>
-          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Ready</p>
-                <p className="text-lg font-semibold text-gray-900">
-                  {healthData?.ready ? getStatusValue(healthData?.ready) : "N/A"}
-                </p>
-              </div>
-              {getStatusIcon(getStatusValue(healthData?.ready))}
+
+          {/* Stats cards (admin only) */}
+          {user?.role === "admin" && stats && (
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4">
+              <SummaryCard
+                title="Homes"
+                value={stats.totalHomes}
+                subtitle={`${stats.totalRooms} rooms`}
+                icon={<Home className="w-5 h-5 text-blue-700" />}
+                accent="blue"
+              />
+              <SummaryCard
+                title="Devices"
+                value={stats.totalDevices}
+                subtitle={`${stats.ActiveDevices ?? stats.activeDevices ?? 0} active`}
+                icon={<Cpu className="w-5 h-5 text-emerald-700" />}
+                accent="green"
+              />
+              <SummaryCard
+                title="Users"
+                value={stats.totalUsers}
+                subtitle={`${stats.activeUsers} active`}
+                icon={<Users className="w-5 h-5 text-purple-700" />}
+                accent="purple"
+              />
+              <SummaryCard
+                title="Automations"
+                value={stats.totalAutomations}
+                subtitle={`${stats.totalSensorDataRecords} sensor records`}
+                icon={<BarChart3 className="w-5 h-5 text-sky-700" />}
+                accent="blue"
+              />
             </div>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Environment</p>
-                <p className="text-lg font-semibold text-gray-900">
-                  {meta?.environment || "Unknown"}
-                </p>
-                <p className="text-xs text-gray-500">
-                  Uptime: {meta?.uptimeSeconds !== undefined ? formatUptime(meta.uptimeSeconds) : "N/A"}
-                </p>
-              </div>
-              <Clock className="w-5 h-5 text-blue-500" />
-            </div>
-          </div>
+          )}
         </div>
 
         {error && (
@@ -273,7 +347,7 @@ export default function HealthPage() {
         {healthData && (
           <div className="space-y-6">
             {/* Overall Status */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold">System Status</h2>
                 <div className="flex items-center text-sm text-gray-500">
@@ -283,7 +357,7 @@ export default function HealthPage() {
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="flex items-center p-4 bg-slate-50 rounded-xl border border-gray-200">
                   <Server className="w-10 h-10 text-blue-500 mr-4 flex-shrink-0" />
                   <div className="flex-1">
                     <div className="font-medium text-gray-900 mb-1">Live Status</div>
@@ -301,7 +375,7 @@ export default function HealthPage() {
                   </div>
                 </div>
                 
-                <div className="flex items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="flex items-center p4 bg-slate-50 rounded-xl border border-gray-200">
                   <Activity className="w-10 h-10 text-purple-500 mr-4 flex-shrink-0" />
                   <div className="flex-1">
                     <div className="font-medium text-gray-900 mb-1">System Info</div>
@@ -317,7 +391,7 @@ export default function HealthPage() {
                 </div>
 
                 {healthData.ready && (
-                  <div className="flex items-center p-4 bg-gray-50 rounded-lg border border-gray-200 md:col-span-2">
+                  <div className="flex items-center p-4 bg-slate-50 rounded-xl border border-gray-200 md:col-span-2">
                     <Database className="w-10 h-10 text-green-500 mr-4 flex-shrink-0" />
                     <div className="flex-1">
                       <div className="font-medium text-gray-900 mb-1">Ready Status</div>
@@ -340,7 +414,7 @@ export default function HealthPage() {
 
             {/* Health Checks */}
             {healthData.live?.entries && healthData.live.entries.length > 0 && (
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                 <h3 className="text-lg font-semibold mb-4">Health Checks</h3>
                 <div className="space-y-3">
                   {healthData.live.entries.map((entry: any, index: number) => (
@@ -363,7 +437,7 @@ export default function HealthPage() {
 
             {/* Readiness Checks */}
             {healthData.ready?.entries && healthData.ready.entries.length > 0 && (
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                 <h3 className="text-lg font-semibold mb-4">Readiness Checks</h3>
                 <div className="space-y-3">
                   {healthData.ready.entries.map((entry: any, index: number) => (
@@ -386,7 +460,7 @@ export default function HealthPage() {
 
             {/* System Information */}
             {meta && (
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                 <h3 className="text-lg font-semibold mb-4">System Information</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
@@ -450,7 +524,7 @@ export default function HealthPage() {
 
             {/* Database Information */}
             {meta?.ef && (
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                 <h3 className="text-lg font-semibold mb-4">Database Information</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>

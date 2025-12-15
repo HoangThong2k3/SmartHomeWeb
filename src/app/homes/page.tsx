@@ -7,7 +7,7 @@ import { ServiceGuard } from "@/components/auth/ServiceGuard";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiService } from "@/services/api";
 import { useServiceAccess } from "@/hooks/useServiceAccess";
-import { Home } from "@/types";
+import { Home, HomeProfile } from "@/types";
 import { Building2, Plus, Edit, Trash2, Users, Eye } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -21,6 +21,9 @@ export default function HomesPage() {
     isLoading: isServiceLoading,
   } = useServiceAccess();
   const [homes, setHomes] = useState<Home[]>([]);
+  const [homeProfiles, setHomeProfiles] = useState<Record<string, HomeProfile>>(
+    {}
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -45,6 +48,20 @@ export default function HomesPage() {
         ? await apiService.getAllHomes()
         : await apiService.getMyHomes();
       setHomes(userHomes);
+
+      // Fetch profile (counts) for each home to show Rooms/Devices totals
+      const profiles: Record<string, HomeProfile> = {};
+      await Promise.all(
+        (userHomes || []).map(async (h) => {
+          try {
+            const p = await apiService.getHomeProfile(h.id);
+            profiles[h.id] = p;
+          } catch (e) {
+            console.warn("Could not load home profile for", h.id, e);
+          }
+        })
+      );
+      setHomeProfiles(profiles);
     } catch (err: any) {
       setError(err.message || "Failed to load homes");
     } finally {
@@ -282,7 +299,7 @@ export default function HomesPage() {
                       <Users className="w-4 h-4 mr-1" />
                       <span>Owner ID: {home.ownerId || "Unknown"}</span>
                     </div>
-                    <div className="flex items-center text-sm">
+                    <div className="flex flex-wrap items-center text-sm gap-3">
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-medium ${
                           home.securityStatus === "ARMED"
@@ -292,16 +309,34 @@ export default function HomesPage() {
                       >
                         {home.securityStatus || "DISARMED"}
                       </span>
+                      <span className="text-gray-600">
+                        {(homeProfiles[home.id]?.totalRooms ??
+                          homeProfiles[home.id]?.TotalRooms ??
+                          "—") + " phòng"}
+                      </span>
+                      <span className="text-gray-600">
+                        {(homeProfiles[home.id]?.totalDevices ??
+                          homeProfiles[home.id]?.TotalDevices ??
+                          "—") + " thiết bị"}
+                      </span>
                     </div>
                   </div>
                   <div className="flex space-x-2">
+                    <button
+                      onClick={() => router.push(`/homes/${home.id}`)}
+                      className="text-blue-600 hover:text-blue-800 flex items-center text-sm"
+                      title="Xem chi tiết Home profile"
+                    >
+                      <Eye className="w-4 h-4 mr-1" />
+                      Details
+                    </button>
                     <button
                       onClick={() => router.push(`/user-dashboard?homeId=${home.id}`)}
                       className="text-blue-600 hover:text-blue-800 flex items-center text-sm"
                       title="Xem phòng và thiết bị"
                     >
                       <Eye className="w-4 h-4 mr-1" />
-                      View
+                      Dashboard
                     </button>
                     {isCustomer && (
                       <button

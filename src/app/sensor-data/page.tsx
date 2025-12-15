@@ -17,6 +17,7 @@ import {
   Filter,
   Edit,
   RefreshCw,
+  Activity,
 } from "lucide-react";
 
 export default function SensorDataPage() {
@@ -314,6 +315,14 @@ export default function SensorDataPage() {
     }
   };
 
+  const extractNumericForChart = (parsed: any): number | null => {
+    if (!parsed || typeof parsed !== "object") return null;
+    if (typeof parsed.temperature === "number") return parsed.temperature;
+    if (typeof parsed.humidity === "number") return parsed.humidity;
+    if (typeof parsed.value === "number") return parsed.value;
+    return null;
+  };
+
   if (isLoading && devices.length === 0) {
     return (
       <ProtectedRoute>
@@ -500,6 +509,28 @@ export default function SensorDataPage() {
           </div>
         )}
 
+        {/* Simple trend chart */}
+        {selectedDevice && sensorData.length > 0 && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-blue-600" />
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Sensor trend</p>
+                  <p className="text-xs text-gray-500">
+                    Giá trị gần nhất của {Math.min(sensorData.length, 30)} bản ghi
+                  </p>
+                </div>
+              </div>
+            </div>
+            <SensorMiniChart
+              data={sensorData}
+              parseValue={parseSensorValue}
+              extractNumeric={extractNumericForChart}
+            />
+          </div>
+        )}
+
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -536,7 +567,13 @@ export default function SensorDataPage() {
                       Device ID
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Value
+                      Temperature
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Humidity
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Value (JSON)
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Timestamp
@@ -550,10 +587,24 @@ export default function SensorDataPage() {
                   {sensorData.map((rawItem) => {
                     const item = normalizeSensorData(rawItem);
                     const parsedValue = parseSensorValue(item.value);
+                    const temp =
+                      typeof (parsedValue as any)?.temperature === "number"
+                        ? (parsedValue as any).temperature
+                        : null;
+                    const hum =
+                      typeof (parsedValue as any)?.humidity === "number"
+                        ? (parsedValue as any).humidity
+                        : null;
                     return (
                       <tr key={item.id || Math.random()} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           {item.deviceId || "N/A"}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {temp !== null ? `${temp}°` : "—"}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {hum !== null ? `${hum}%` : "—"}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-900">
                           <div className="max-w-md">
@@ -784,6 +835,57 @@ function CreateSensorDataForm({
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+function SensorMiniChart({
+  data,
+  parseValue,
+  extractNumeric,
+}: {
+  data: any[];
+  parseValue: (v: string) => any;
+  extractNumeric: (parsed: any) => number | null;
+}) {
+  // Lấy tối đa 30 bản ghi gần nhất và chuyển thành points số
+  const recent = data
+    .slice(-30)
+    .map((raw) => {
+      const v = parseValue((raw as any).value ?? (raw as any).Value ?? "");
+      return {
+        t:
+          (raw as any).timeStamp ||
+          (raw as any).TimeStamp ||
+          (raw as any).timestamp ||
+          (raw as any).Timestamp,
+        y: extractNumeric(v),
+      };
+    })
+    .filter((p) => p.y !== null) as { t: string; y: number }[];
+
+  if (recent.length === 0) {
+    return <p className="text-sm text-gray-500">Không có giá trị số để vẽ biểu đồ.</p>;
+  }
+
+  const min = Math.min(...recent.map((p) => p.y));
+  const max = Math.max(...recent.map((p) => p.y));
+  const range = max - min || 1;
+
+  return (
+    <div className="h-40 flex items-end gap-1">
+      {recent.map((p, idx) => {
+        const normalized = (p.y - min) / range;
+        const height = 20 + normalized * 80; // 20–100%
+        return (
+          <div
+            key={`${p.t}-${idx}`}
+            className="flex-1 bg-gradient-to-t from-blue-500 to-sky-400 rounded-t-md"
+            style={{ height: `${height}%` }}
+            title={`${new Date(p.t).toLocaleTimeString()} → ${p.y}`}
+          />
+        );
+      })}
     </div>
   );
 }

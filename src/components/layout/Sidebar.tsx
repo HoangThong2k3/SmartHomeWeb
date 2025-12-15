@@ -17,11 +17,20 @@ import {
   Package,
   MessageSquare,
   BarChart3,
+  Link as LinkIcon,
 } from "lucide-react";
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { user } = useAuth();
+
+  // Chọn đích đến phù hợp thay vì quay lại landing (có form đăng nhập)
+  const logoHref =
+    (user?.role || "").toLowerCase() === "admin"
+      ? "/admin"
+      : user
+      ? "/user-dashboard"
+      : "/";
 
   // Menu items based on user role
   const getMenuItems = () => {
@@ -50,6 +59,7 @@ export default function Sidebar() {
       baseItems.splice(3, 0, { name: "Admin Payments", href: "/admin/payments", icon: CreditCard });
       baseItems.splice(4, 0, { name: "Service Packages", href: "/admin/packages", icon: Package });
       baseItems.splice(5, 0, { name: "Support Requests", href: "/admin/support-requests", icon: MessageSquare });
+      baseItems.splice(6, 0, { name: "Device Provisioning", href: "/admin/device-mappings", icon: LinkIcon });
     }
 
     // Add system pages
@@ -69,7 +79,7 @@ export default function Sidebar() {
     <div className="w-64 bg-white shadow-lg h-full">
       {/* Logo */}
       <div className="p-4 border-b border-gray-200">
-        <Link href="/" className="block">
+        <Link href={logoHref} className="block" prefetch={false}>
           <h1 className="text-xl font-bold text-gray-800 hover:text-blue-600 transition-colors cursor-pointer">🏠 SmartHome</h1>
           <p className="text-sm text-gray-500">Management System</p>
         </Link>

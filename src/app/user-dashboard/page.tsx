@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef, Suspense } from "react";
+import React, { useEffect, useState, useRef, Suspense, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -27,11 +27,38 @@ import {
   Cpu,
 } from "lucide-react";
 import { Home as HomeType, Room, Device } from "@/types";
-import UserLayout from "@/components/layout/UserLayout";
 import Layout from "@/components/layout/Layout";
 import Card from "@/components/ui/Card";
 import { apiService } from "@/services/api";
 import { useServiceAccess } from "@/hooks/useServiceAccess";
+
+const SummaryCard = ({
+  title,
+  value,
+  sub,
+  icon,
+  color,
+}: {
+  title: string;
+  value: React.ReactNode;
+  sub?: string;
+  icon: React.ReactNode;
+  color: string;
+}) => (
+  <div className="relative overflow-hidden rounded-2xl bg-white/90 backdrop-blur border border-slate-100 shadow-md hover:shadow-xl transition-all">
+    <div className={`absolute inset-0 bg-gradient-to-br ${color} opacity-10`} />
+    <div className="relative p-4 flex items-center justify-between">
+      <div>
+        <p className="text-xs uppercase tracking-wide text-slate-500">{title}</p>
+        <p className="text-2xl font-bold text-slate-900">{value}</p>
+        {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
+      </div>
+      <div className="h-10 w-10 rounded-xl bg-slate-900/5 flex items-center justify-center text-slate-700">
+        {icon}
+      </div>
+    </div>
+  </div>
+);
 
 function UserDashboardInner() {
   const { user } = useAuth();
@@ -63,6 +90,22 @@ function UserDashboardInner() {
   const [securityStatus, setSecurityStatus] = useState<"ARMED" | "DISARMED">("DISARMED");
   const [showSecurityConfirm, setShowSecurityConfirm] = useState(false);
   const [pendingSecurityStatus, setPendingSecurityStatus] = useState<"ARMED" | "DISARMED" | null>(null);
+  // Mappings cho nhanh UI
+  const roomsByHome = useMemo(() => {
+    const map: Record<string, Room[]> = {};
+    rooms.forEach((r) => {
+      map[r.homeId] = map[r.homeId] ? [...map[r.homeId], r] : [r];
+    });
+    return map;
+  }, [rooms]);
+
+  const devicesByHome = useMemo(() => {
+    const map: Record<string, Device[]> = {};
+    devices.forEach((d) => {
+      map[d.roomId] = map[d.roomId] ? [...map[d.roomId], d] : [d];
+    });
+    return map;
+  }, [devices]);
   
   // Refs để prevent infinite loop
   const hasFetchedRef = useRef<string | number | null>(null);
@@ -351,36 +394,48 @@ function UserDashboardInner() {
     };
   };
 
+  const getDeviceStatusBadge = (status?: string) => {
+    const s = (status || "").toLowerCase();
+    const isOnline = s === "online";
+    return isOnline
+      ? "bg-emerald-100 text-emerald-700"
+      : "bg-gray-100 text-gray-600";
+  };
+
   // Use Layout with Sidebar for admin, UserLayout for regular users
-  const DashboardContent = ({ showHeader = false }: { showHeader?: boolean }) => (
+  const DashboardContent = ({ showHeader = false }: { showHeader?: boolean }) => {
+    const totalHomes = homes.length;
+    const totalRooms = rooms.length;
+    const totalDevices = devices.length;
+    const selectedHome = homes.find((h) => h.id === selectedHomeId);
+
+    return (
     <>
       {/* Header - only show for UserLayout */}
       {showHeader && (
-        <header className="bg-white shadow-sm border-b">
-          <div className="px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              <div className="flex items-center">
-                <h1 className="text-xl font-semibold text-gray-900">Dashboard</h1>
+          <header className="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-800 text-white shadow-sm">
+            <div className="px-4 sm:px-6 lg:px-8 py-5">
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-indigo-200">User Dashboard</p>
+                  <h1 className="text-2xl font-semibold">Chào, {user?.name || "User"}</h1>
+                  <p className="text-sm text-indigo-100 mt-1">Quản lý nhà, phòng và thiết bị thông minh</p>
               </div>
-
-              <div className="flex items-center space-x-4">
-                <button className="p-2 text-gray-400 hover:text-gray-500">
-                  <Search className="h-5 w-5" />
-                </button>
-                <button className="p-2 text-gray-400 hover:text-gray-500 relative">
-                  <Bell className="h-5 w-5" />
-                  <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full"></span>
-                </button>
-
                 <div className="flex items-center space-x-3">
-                  <div className="h-8 w-8 bg-blue-500 rounded-full flex items-center justify-center">
-                    <span className="text-white text-sm font-medium">
+                  <button className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white">
+                    <Search className="h-5 w-5" />
+                  </button>
+                  <button className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white relative">
+                    <Bell className="h-5 w-5" />
+                    <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-400 rounded-full"></span>
+                  </button>
+                  <div className="flex items-center space-x-2 bg-white/10 px-3 py-2 rounded-lg">
+                    <div className="h-8 w-8 bg-white text-indigo-800 rounded-full flex items-center justify-center font-semibold">
                       {user?.name?.charAt(0).toUpperCase() || "U"}
-                    </span>
                   </div>
-                  <div className="text-sm">
-                    <p className="font-medium text-gray-900">{user?.email}</p>
-                    <p className="text-gray-500 capitalize">{user?.role || "Customer"}</p>
+                    <div className="text-sm leading-tight">
+                      <p className="font-semibold">{user?.email}</p>
+                      <p className="text-indigo-100 capitalize">{user?.role || "Customer"}</p>
                   </div>
                 </div>
               </div>
@@ -389,7 +444,45 @@ function UserDashboardInner() {
         </header>
       )}
 
-      <div className={showHeader ? "px-4 sm:px-6 lg:px-8 py-8" : ""}>
+        <div className={showHeader ? "px-4 sm:px-6 lg:px-8 py-8 bg-gradient-to-br from-slate-50 via-white to-blue-50 min-h-screen" : ""}>
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+            <SummaryCard
+              title="Homes"
+              value={totalHomes}
+              sub={selectedHome ? `Đang xem: ${selectedHome.name}` : "Tất cả homes"}
+              icon={<Home className="w-5 h-5" />}
+              color="from-blue-500 to-indigo-500"
+            />
+            <SummaryCard
+              title="Rooms"
+              value={totalRooms}
+              sub={selectedHome ? `Trong home: ${selectedHome.name}` : "Tổng số phòng"}
+              icon={<DoorOpen className="w-5 h-5" />}
+              color="from-purple-500 to-pink-500"
+            />
+            <SummaryCard
+              title="Devices"
+              value={totalDevices}
+              sub="Thiết bị đã kết nối"
+              icon={<Cpu className="w-5 h-5" />}
+              color="from-emerald-500 to-teal-500"
+            />
+            <SummaryCard
+              title="Security"
+              value={securityStatus === "ARMED" ? "Armed" : "Disarmed"}
+              sub={homes.length ? homes[0].name : "Hệ thống"}
+              icon={
+                securityStatus === "ARMED" ? (
+                  <ShieldCheck className="w-5 h-5" />
+                ) : (
+                  <ShieldOff className="w-5 h-5" />
+                )
+              }
+              color="from-amber-500 to-orange-500"
+            />
+          </div>
+
         {/* Welcome Section */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
@@ -537,7 +630,7 @@ function UserDashboardInner() {
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Homes */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+            <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-4 hover:shadow-xl transition">
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <p className="text-sm text-gray-500">Homes</p>
@@ -549,9 +642,12 @@ function UserDashboardInner() {
                     {homes.map((h) => {
                       const isSelected = h.id === selectedHomeId;
                       const roomCount = rooms.filter((r) => r.homeId === h.id).length;
-                      const deviceCount = devices.filter((d) =>
-                        rooms.some((r) => r.homeId === h.id && r.id === d.roomId)
-                      ).length;
+                  const deviceCount = rooms
+                    .filter((r) => r.homeId === h.id)
+                    .reduce(
+                      (sum, r) => sum + devices.filter((d) => d.roomId === r.id).length,
+                      0
+                    );
                       return (
                         <button
                           key={h.id}
@@ -560,20 +656,24 @@ function UserDashboardInner() {
                             const firstRoom = rooms.find((r) => r.homeId === h.id);
                             setSelectedRoomId(firstRoom ? firstRoom.id : null);
                           }}
-                          className={`w-full text-left rounded-lg border px-3 py-2 transition ${
+                      className={`w-full text-left rounded-xl border px-3 py-3 transition ${
                             isSelected
                               ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm"
                               : "border-gray-200 hover:border-blue-300"
                           }`}
                         >
-                          <div className="flex items-center justify-between">
+                      <div className="flex items-start justify-between">
                             <div>
                               <p className="font-semibold">{h.name || "Unnamed Home"}</p>
                               <p className="text-xs text-gray-500">{h.address || "Không có địa chỉ"}</p>
-                            </div>
-                            <span className="text-xs text-gray-500">
-                              {roomCount} phòng • {deviceCount} thiết bị
-                            </span>
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-600">
+                            <span className="px-2 py-1 rounded-full bg-gray-100">{roomCount} phòng</span>
+                            <span className="px-2 py-1 rounded-full bg-gray-100">{deviceCount} thiết bị</span>
+                          </div>
+                        </div>
+                        {isSelected && (
+                          <span className="text-[10px] px-2 py-1 rounded-full bg-blue-100 text-blue-700">Đang xem</span>
+                        )}
                           </div>
                         </button>
                       );
@@ -582,7 +682,7 @@ function UserDashboardInner() {
                 </div>
 
                 {/* Rooms */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+            <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-4 hover:shadow-xl transition">
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <p className="text-sm text-gray-500">Rooms</p>
@@ -601,26 +701,40 @@ function UserDashboardInner() {
                         .map((room) => {
                           const isSelected = room.id === selectedRoomId;
                           const sensorData = getRoomSensorData(room.id);
+                      const deviceCount = devices.filter((d) => d.roomId === room.id).length;
                           return (
                             <button
                               key={room.id}
                               onClick={() => setSelectedRoomId(room.id)}
-                              className={`w-full text-left rounded-lg border px-3 py-2 transition ${
+                          className={`w-full text-left rounded-xl border px-3 py-3 transition ${
                                 isSelected
                                   ? "border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm"
                                   : "border-gray-200 hover:border-indigo-300"
                               }`}
                             >
-                              <div className="flex items-center justify-between">
+                          <div className="flex items-start justify-between">
                                 <div>
                                   <p className="font-semibold">{room.name}</p>
                                   <p className="text-xs text-gray-500 capitalize">
                                     {room.type?.replace("_", " ")}
                                   </p>
-                                </div>
-                                <span className="text-xs text-gray-500">
-                                  {sensorData.temperature !== "N/A" ? sensorData.temperature : ""}
+                              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-gray-600">
+                                <span className="px-2 py-1 rounded-full bg-gray-100">{deviceCount} thiết bị</span>
+                                {sensorData.temperature !== "N/A" && (
+                                  <span className="px-2 py-1 rounded-full bg-orange-50 text-orange-700">
+                                    {sensorData.temperature}
+                                  </span>
+                                )}
+                                {sensorData.hasMotion !== "N/A" && (
+                                  <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">
+                                    {sensorData.hasMotion}
                                 </span>
+                                )}
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <span className="text-[10px] px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">Đang xem</span>
+                            )}
                               </div>
                             </button>
                           );
@@ -630,7 +744,7 @@ function UserDashboardInner() {
                 </div>
 
                 {/* Devices */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+            <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-4 hover:shadow-xl transition">
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <p className="text-sm text-gray-500">Devices</p>
@@ -650,7 +764,7 @@ function UserDashboardInner() {
                           .map((device) => (
                             <div
                               key={device.id}
-                              className="rounded-lg border border-gray-200 px-3 py-2 flex items-center justify-between bg-gray-50"
+                          className="rounded-xl border border-gray-200 px-3 py-2 flex items-center justify-between bg-gray-50"
                             >
                               <div>
                                 <p className="font-semibold text-gray-900">{device.name}</p>
@@ -658,7 +772,13 @@ function UserDashboardInner() {
                                   {device.type || (device as any).deviceType || "Device"}
                                 </p>
                               </div>
-                              <span className="text-xs text-green-600">Đang hoạt động</span>
+                          <span
+                            className={`text-[11px] px-2 py-1 rounded-full ${getDeviceStatusBadge(
+                              device.status
+                            )}`}
+                          >
+                            {device.status === "online" ? "Online" : "Offline"}
+                          </span>
                             </div>
                           ))}
                       </div>
@@ -729,19 +849,13 @@ function UserDashboardInner() {
     </>
   );
 
-  // Use Layout with Sidebar for admin, UserLayout for regular users
-  if (user?.role === "admin") {
-    return (
-      <Layout>
-        <DashboardContent showHeader={false} />
-      </Layout>
-    );
-  }
+  };
 
-  // Customer nhưng chưa có dịch vụ: trong lúc redirect sang /subscribe thì hiển thị loader
+  // Dùng chung Layout (Sidebar + Header) cho cả admin & customer để giao diện nhất quán
+  // Nếu customer chưa có dịch vụ và đang redirect, hiển thị loader trong Layout
   if (user?.role === "customer" && needsSubscription && !isServiceLoading) {
     return (
-      <UserLayout>
+      <Layout>
         <div className="min-h-[60vh] flex items-center justify-center">
           <div className="flex flex-col items-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4" />
@@ -750,14 +864,14 @@ function UserDashboardInner() {
             </p>
           </div>
         </div>
-      </UserLayout>
+      </Layout>
     );
   }
 
   return (
-    <UserLayout>
-      <DashboardContent showHeader={true} />
-    </UserLayout>
+    <Layout>
+      <DashboardContent showHeader={false} />
+    </Layout>
   );
 }
 

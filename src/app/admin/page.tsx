@@ -35,15 +35,21 @@ const Card = ({
   accent: string;
   subtitle?: string;
 }) => (
-  <div className="bg-white border border-gray-100 rounded-xl shadow-sm p-5 relative overflow-hidden">
-    <div className="absolute inset-0 bg-gradient-to-br opacity-5" style={{ backgroundImage: `linear-gradient(135deg, ${accent}, #ffffff)` }} />
-    <div className="flex items-center justify-between relative z-10">
+  <div className="relative overflow-hidden rounded-2xl bg-white/80 backdrop-blur border border-gray-100 shadow-lg shadow-blue-500/5 hover:shadow-blue-500/20 transition-all">
+    <div
+      className="absolute inset-0 opacity-60"
+      style={{ background: `radial-gradient(circle at 20% 20%, ${accent}15, transparent 45%)` }}
+    />
+    <div className="p-5 relative z-10 flex items-center justify-between">
       <div>
-        <p className="text-sm text-gray-500">{title}</p>
+        <p className="text-xs uppercase tracking-wide text-gray-500">{title}</p>
         <p className="text-2xl font-semibold text-gray-900 mt-1">{value}</p>
         {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
       </div>
-      <div className="h-12 w-12 rounded-full flex items-center justify-center" style={{ backgroundColor: `${accent}15`, color: accent }}>
+      <div
+        className="h-12 w-12 rounded-2xl flex items-center justify-center ring-4 ring-white shadow-inner"
+        style={{ backgroundColor: `${accent}15`, color: accent }}
+      >
         <Icon className="h-6 w-6" />
       </div>
     </div>
@@ -105,17 +111,17 @@ export default function AdminDashboardPage() {
   return (
     <ProtectedRoute requireAdmin>
       <Layout>
-        <div className="space-y-8">
-          <div className="flex items-center justify-between">
+        <div className="space-y-8 bg-gradient-to-br from-slate-50 via-white to-blue-50 -m-6 p-6">
+          <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
-              <p className="text-sm text-blue-600 font-semibold uppercase">Admin Dashboard</p>
-              <h1 className="text-3xl font-bold text-gray-900">Thống kê tổng quan</h1>
-              <p className="text-gray-500 mt-2">
+              <p className="text-xs font-semibold uppercase text-blue-600 tracking-wide">Admin Dashboard</p>
+              <h1 className="text-3xl md:text-4xl font-bold text-slate-900 leading-tight">Thống kê tổng quan</h1>
+              <p className="text-slate-500 mt-2">
                 Theo dõi hiệu suất hệ thống, doanh thu và giao dịch gần đây
               </p>
             </div>
             <div className="flex items-center space-x-3">
-              <div className="bg-white border border-gray-200 rounded-lg px-4 py-2 flex items-center space-x-2 shadow-sm">
+              <div className="bg-white/80 backdrop-blur border border-gray-200 rounded-xl px-4 py-2 flex items-center space-x-2 shadow-sm">
                 <Calendar className="h-4 w-4 text-gray-500" />
                 <select
                   value={year}
@@ -143,7 +149,7 @@ export default function AdminDashboardPage() {
 
           {isLoading ? (
             <div className="flex items-center justify-center py-20">
-              <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+              <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
             </div>
           ) : (
             <>
@@ -185,7 +191,7 @@ export default function AdminDashboardPage() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+                <div className="lg:col-span-2 bg-white/90 backdrop-blur rounded-2xl border border-gray-100 shadow-lg shadow-blue-500/10 p-6">
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <p className="text-sm text-gray-500">Doanh thu theo tháng</p>
@@ -202,7 +208,7 @@ export default function AdminDashboardPage() {
                   )}
                 </div>
 
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+                <div className="bg-white/90 backdrop-blur rounded-2xl border border-gray-100 shadow-lg shadow-blue-500/10 p-6">
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <p className="text-sm text-gray-500">Giao dịch gần đây</p>

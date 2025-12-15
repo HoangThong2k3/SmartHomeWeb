@@ -9,6 +9,7 @@ import {
   CreateUserRequest,
   UpdateUserRequest,
   Home,
+  HomeProfile,
   CreateHomeRequest,
   UpdateHomeRequest,
   Room,
@@ -45,6 +46,8 @@ import {
   StatsSummary,
   RevenuePoint,
   RecentTransaction,
+  DeviceMapping,
+  CreateDeviceMappingRequest,
 } from "@/types";
 
 // Base URL cho backend, ưu tiên lấy từ biến môi trường NEXT_PUBLIC_API_URL
@@ -151,6 +154,47 @@ class ApiService {
       securityStatus,
       createdAt,
       updatedAt,
+    };
+  }
+
+  private mapHomeProfileFromApi(api: any): HomeProfile {
+    return {
+      id:
+        api?.HomeId?.toString() ??
+        api?.homeId?.toString() ??
+        api?.Id?.toString() ??
+        api?.id?.toString() ??
+        "",
+      name: api?.Name ?? api?.name ?? "Unnamed Home",
+      ownerId: (api?.OwnerId ?? api?.ownerId ?? api?.UserId ?? api?.userId ?? "0").toString(),
+      ownerName: api?.OwnerName ?? api?.ownerName,
+      ownerEmail: api?.OwnerEmail ?? api?.ownerEmail,
+      address: api?.Address ?? api?.address,
+      description: api?.Description ?? api?.description,
+      imageUrl: api?.ImageUrl ?? api?.imageUrl,
+      createdAt:
+        api?.CreatedAt ??
+        api?.createdAt ??
+        api?.created_at ??
+        new Date().toISOString(),
+      securityStatus: api?.SecurityStatus ?? api?.securityStatus,
+      securityMode: api?.SecurityMode ?? api?.securityMode,
+      alertsEnabled: api?.AlertsEnabled ?? api?.alertsEnabled,
+      temperatureUnit: api?.TemperatureUnit ?? api?.temperatureUnit,
+      timezone: api?.Timezone ?? api?.timezone,
+      theme: api?.Theme ?? api?.theme,
+      installationDate: api?.InstallationDate ?? api?.installationDate,
+      installedBy: api?.InstalledBy ?? api?.installedBy,
+      installationNotes: api?.InstallationNotes ?? api?.installationNotes,
+      area: api?.Area ?? api?.area,
+      floors: api?.Floors ?? api?.floors,
+      homeType: api?.HomeType ?? api?.homeType,
+      adminNotes: api?.AdminNotes ?? api?.adminNotes,
+      tags: api?.Tags ?? api?.tags ?? [],
+      totalRooms: api?.TotalRooms ?? api?.totalRooms,
+      totalDevices: api?.TotalDevices ?? api?.totalDevices,
+      activeAutomations: api?.ActiveAutomations ?? api?.activeAutomations,
+      faceProfiles: api?.FaceProfiles ?? api?.faceProfiles,
     };
   }
 
@@ -1217,6 +1261,78 @@ class ApiService {
     return this.mapHomeFromApi(data);
   }
 
+  async getHomeProfile(id: string): Promise<HomeProfile> {
+    // Dùng proxy để tránh CORS khi gọi từ client
+    const data = await this.requestViaProxy<any>(`/Homes/${id}/profile`);
+
+    // Nếu backend trả về HTML lỗi (403 / stopped), ném lỗi thân thiện
+    const messageStr =
+      typeof data === "string"
+        ? data
+        : typeof data?.message === "string"
+        ? data.message
+        : "";
+    const looksLikeHtml =
+      messageStr.toLowerCase().includes("<html") ||
+      (typeof data === "string" && data.toLowerCase().includes("<html"));
+    const hasHomeId =
+      typeof data === "object" &&
+      data !== null &&
+      (data.HomeId !== undefined || data.homeId !== undefined);
+
+    if (looksLikeHtml || !hasHomeId) {
+      throw new Error(
+        "Không truy cập được Home profile (có thể backend đang dừng hoặc bị chặn quyền)."
+      );
+    }
+
+    return this.mapHomeProfileFromApi(data);
+  }
+
+  // Admin Device Mappings (Provisioning)
+  async getDeviceMappings(): Promise<DeviceMapping[]> {
+    // Gọi trực tiếp backend giống như Swagger (đã cấu hình CORS cho http://localhost:3000)
+    const list = await this.request<any[]>(`/admin/mappings`);
+
+    return (list || []).map((m) => ({
+      id: m?.Id ?? m?.id ?? 0,
+      deviceId: m?.DeviceId ?? m?.deviceId ?? 0,
+      deviceName: m?.DeviceName ?? m?.deviceName,
+      hardwareIdentifier: m?.HardwareIdentifier ?? m?.hardwareIdentifier,
+      nodeIdentifier: m?.NodeIdentifier ?? m?.nodeIdentifier,
+      homeKey: m?.HomeKey ?? m?.homeKey,
+      description: m?.Description ?? m?.description,
+      createdAt: m?.CreatedAt ?? m?.createdAt ?? new Date().toISOString(),
+    }));
+  }
+
+  async createDeviceMapping(payload: CreateDeviceMappingRequest): Promise<DeviceMapping> {
+    const body = {
+      DeviceId: payload.DeviceId,
+      HomeKey: payload.HomeKey,
+      NodeId: payload.NodeId,
+      Description: payload.Description,
+    };
+    const created = await this.request<any>(`/admin/mappings`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return {
+      id: created?.Id ?? created?.id ?? 0,
+      deviceId: created?.DeviceId ?? created?.deviceId ?? payload.DeviceId,
+      deviceName: created?.DeviceName ?? created?.deviceName,
+      hardwareIdentifier: created?.HardwareIdentifier ?? created?.hardwareIdentifier,
+      nodeIdentifier: created?.NodeIdentifier ?? created?.nodeIdentifier,
+      homeKey: created?.HomeKey ?? created?.homeKey ?? payload.HomeKey,
+      description: created?.Description ?? created?.description ?? payload.Description,
+      createdAt: created?.CreatedAt ?? created?.createdAt ?? new Date().toISOString(),
+    };
+  }
+
+  async deleteDeviceMapping(id: number): Promise<void> {
+    await this.request<void>(`/admin/mappings/${id}`, { method: "DELETE" });
+  }
+
   // Admin: get all homes in the system
   async getAllHomes(): Promise<Home[]> {
     const list = await this.request<any[]>(`"/Homes"`.replace(/"/g, ""));
@@ -1585,6 +1701,23 @@ class ApiService {
     }
   }
 
+  // Điều khiển thiết bị qua endpoint control (Downlink)
+  async controlDevice(
+    id: string,
+    payload: { action: string; value?: string }
+  ): Promise<void> {
+    const body: any = {
+      Action: payload.action,
+    };
+    if (payload.value !== undefined) {
+      body.Value = payload.value;
+    }
+    await this.request<void>(`/Devices/${id}/control`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
   // Automations Management APIs
   async getAutomationsByHome(homeId: string): Promise<Automation[]> {
     console.log("[API] getAutomationsByHome - homeId:", homeId);
@@ -1602,6 +1735,11 @@ class ApiService {
       );
       throw error;
     }
+  }
+
+  async getAutomationById(id: string): Promise<Automation> {
+    const data = await this.request<any>(`/Automations/${id}`);
+    return this.mapAutomationFromApi(data);
   }
 
   async createAutomation(
@@ -1703,6 +1841,12 @@ class ApiService {
       console.error("[API] deleteAutomation - error:", error?.message || error);
       throw error;
     }
+  }
+
+  async toggleAutomation(id: string): Promise<void> {
+    await this.request<void>(`/Automations/${id}/toggle`, {
+      method: "PATCH",
+    });
   }
 
   // Sensor Data Management APIs
