@@ -452,71 +452,87 @@ class ApiService {
 
   private mapAutomationFromApi(api: any): Automation {
     const now = new Date().toISOString();
-    const triggers = api?.triggers || api?.Triggers || "";
-    const actions = api?.actions || api?.Actions || "";
     return {
       id: (
+        api?.Id ??
+        api?.id ??
         api?.automationId ??
         api?.AutomationId ??
-        api?.id ??
-        api?.Id ??
         ""
       ).toString(),
       name: api?.name || api?.Name || "",
-      description: api?.description || api?.Description || "",
-      triggers: triggers,
-      actions: actions,
-      trigger: triggers, // Legacy support
-      action: actions, // Legacy support
-      source: api?.source || api?.Source || "USER_CREATED",
-      suggestionStatus:
-        api?.suggestionStatus || api?.SuggestionStatus || "PENDING",
-      isActive:
-        api?.isActive !== undefined
-          ? !!api?.isActive
-          : api?.IsActive !== undefined
-          ? !!api?.IsActive
-          : true,
       homeId: (api?.homeId || api?.HomeId || "").toString(),
+
+      // Trạng thái kích hoạt
+      isEnabled:
+        api?.IsEnabled !== undefined
+          ? !!api?.IsEnabled
+          : api?.isEnabled !== undefined
+          ? !!api?.isEnabled
+          : true,
+
+      // Trigger thông số thiết bị
+      triggerType: api?.TriggerType || api?.triggerType || "DeviceState",
+      triggerDeviceId:
+        api?.TriggerDeviceId ?? api?.triggerDeviceId ?? null,
+      triggerCondition:
+        api?.TriggerCondition ?? api?.triggerCondition ?? null,
+      triggerValue:
+        api?.TriggerValue ?? api?.triggerValue ?? null,
+
+      // Trigger theo thời gian (TimeSpan bên backend, FE giữ dạng string)
+      triggerTimeStart:
+        api?.TriggerTimeStart ??
+        api?.triggerTimeStart ??
+        null,
+      triggerTimeEnd:
+        api?.TriggerTimeEnd ??
+        api?.triggerTimeEnd ??
+        null,
+
+      // Action
+      actionDeviceId:
+        api?.ActionDeviceId ??
+        api?.actionDeviceId ??
+        0,
+      actionValue:
+        api?.ActionValue ??
+        api?.actionValue ??
+        0,
+
       createdAt: api?.createdAt || api?.CreatedAt || now,
-      updatedAt: api?.updatedAt || api?.UpdatedAt || now,
     } as Automation;
   }
 
   private toApiAutomationCreate(req: CreateAutomationRequest): any {
-    const homeIdNum = Number(req.homeId);
+    const homeIdNum = parseInt(req.homeId as any);
     return {
-      homeId: homeIdNum,
       HomeId: homeIdNum,
-      name: req.name,
       Name: req.name,
-      triggers: req.triggers,
-      Triggers: req.triggers,
-      actions: req.actions,
-      Actions: req.actions,
-      source: req.source,
-      Source: req.source,
-      isActive: req.isActive,
-      IsActive: req.isActive,
-      suggestionStatus: req.suggestionStatus,
-      SuggestionStatus: req.suggestionStatus,
+      IsEnabled: req.isEnabled,
+      TriggerType: req.triggerType,
+      TriggerDeviceId: req.triggerDeviceId,
+      TriggerCondition: req.triggerCondition,
+      TriggerValue: req.triggerValue,
+      TriggerTimeStart: req.triggerTimeStart,
+      TriggerTimeEnd: req.triggerTimeEnd,
+      ActionDeviceId: req.actionDeviceId,
+      ActionValue: req.actionValue,
     };
   }
 
   private toApiAutomationUpdate(req: UpdateAutomationRequest): any {
     return {
-      name: req.name,
       Name: req.name,
-      triggers: req.triggers,
-      Triggers: req.triggers,
-      actions: req.actions,
-      Actions: req.actions,
-      isActive: req.isActive,
-      IsActive: req.isActive,
-      suggestionStatus: (req as any).suggestionStatus,
-      SuggestionStatus: (req as any).suggestionStatus,
-      source: (req as any).source,
-      Source: (req as any).source,
+      IsEnabled: req.isEnabled,
+      TriggerType: req.triggerType,
+      TriggerDeviceId: req.triggerDeviceId,
+      TriggerCondition: req.triggerCondition,
+      TriggerValue: req.triggerValue,
+      TriggerTimeStart: req.triggerTimeStart,
+      TriggerTimeEnd: req.triggerTimeEnd,
+      ActionDeviceId: req.actionDeviceId,
+      ActionValue: req.actionValue,
     };
   }
 
@@ -1262,31 +1278,64 @@ class ApiService {
   }
 
   async getHomeProfile(id: string): Promise<HomeProfile> {
-    // Dùng proxy để tránh CORS khi gọi từ client
-    const data = await this.requestViaProxy<any>(`/Homes/${id}/profile`);
+    try {
+      console.log(
+        "[ApiService] getHomeProfile - calling direct backend /Homes/{id}/profile",
+        { id, apiBase: API_BASE_URL }
+      );
 
-    // Nếu backend trả về HTML lỗi (403 / stopped), ném lỗi thân thiện
-    const messageStr =
-      typeof data === "string"
-        ? data
-        : typeof data?.message === "string"
-        ? data.message
-        : "";
-    const looksLikeHtml =
-      messageStr.toLowerCase().includes("<html") ||
-      (typeof data === "string" && data.toLowerCase().includes("<html"));
-    const hasHomeId =
-      typeof data === "object" &&
-      data !== null &&
-      (data.HomeId !== undefined || data.homeId !== undefined);
+      // Gọi trực tiếp backend giống Swagger (đã cấu hình CORS)
+      const data = await this.request<any>(`/Homes/${id}/profile`);
 
-    if (looksLikeHtml || !hasHomeId) {
+      // Kiểm tra nhanh xem có phải HTML error page (Azure 403 Web App Stopped, v.v.)
+      const messageStr =
+        typeof data === "string"
+          ? data
+          : typeof data?.message === "string"
+          ? data.message
+          : "";
+      const looksLikeHtml =
+        messageStr.toLowerCase().includes("<html") ||
+        (typeof data === "string" && data.toLowerCase().includes("<html"));
+      const hasHomeId =
+        typeof data === "object" &&
+        data !== null &&
+        (data.HomeId !== undefined || data.homeId !== undefined);
+
+      if (looksLikeHtml || !hasHomeId) {
+        console.error("[ApiService] getHomeProfile - invalid response shape", {
+          looksLikeHtml,
+          hasHomeId,
+          // Cắt ngắn để tránh log quá dài
+          dataSnippet:
+            typeof data === "string"
+              ? data.slice(0, 200)
+              : messageStr.slice(0, 200),
+        });
+
+        const baseMsg = looksLikeHtml
+          ? "Backend trả về trang HTML (có thể app Azure đang dừng hoặc URL/NEXT_PUBLIC_API_URL cấu hình sai)."
+          : "Backend trả về dữ liệu Home profile không hợp lệ (thiếu HomeId).";
+
+        throw new Error(baseMsg);
+      }
+
+      const mapped = this.mapHomeProfileFromApi(data);
+      console.log("[ApiService] getHomeProfile - mapped profile:", mapped);
+      return mapped;
+    } catch (error: any) {
+      console.error(
+        "[ApiService] getHomeProfile - error:",
+        error?.message || error,
+        error
+      );
+      // Gói lại message rõ ràng để UI hiển thị
       throw new Error(
-        "Không truy cập được Home profile (có thể backend đang dừng hoặc bị chặn quyền)."
+        `Không thể tải Home profile (id=${id}): ${
+          error?.message || "Lỗi không xác định"
+        }`
       );
     }
-
-    return this.mapHomeProfileFromApi(data);
   }
 
   // Admin Device Mappings (Provisioning)
@@ -1746,15 +1795,9 @@ class ApiService {
     automationData: CreateAutomationRequest
   ): Promise<Automation> {
     console.log("[API] createAutomation - input:", automationData);
-    console.log(
-      "[API] createAutomation - homeId type:",
-      typeof automationData.homeId,
-      "value:",
-      automationData.homeId
-    );
 
     // Validate homeId
-    const homeIdNum = parseInt(automationData.homeId);
+    const homeIdNum = parseInt(automationData.homeId as any);
     if (isNaN(homeIdNum) || homeIdNum <= 0) {
       const errorMsg = `Invalid homeId: ${automationData.homeId}. Must be a valid number > 0.`;
       console.error("[API] createAutomation - validation error:", errorMsg);
@@ -1762,25 +1805,12 @@ class ApiService {
     }
 
     try {
-      // Map enum values if needed (for backward compatibility)
-      let sourceValue = automationData.source || "USER_CREATED";
-      if (sourceValue === "USER") sourceValue = "USER_CREATED";
-      if (sourceValue === "SUGGESTED") sourceValue = "AI_SUGGESTED";
-
-      const payload = {
-        HomeId: homeIdNum,
-        Name: automationData.name,
-        Triggers: automationData.triggers,
-        Actions: automationData.actions,
-        Source: sourceValue,
-        IsActive: automationData.isActive,
-        SuggestionStatus: automationData.suggestionStatus || "PENDING",
-      };
+      const payload = this.toApiAutomationCreate({
+        ...automationData,
+        homeId: homeIdNum.toString(),
+      });
       console.log("[API] createAutomation - payload:", payload);
-      console.log(
-        "[API] createAutomation - payload JSON:",
-        JSON.stringify(payload)
-      );
+
       const created = await this.request<any>("/Automations", {
         method: "POST",
         body: JSON.stringify(payload),
@@ -1800,24 +1830,8 @@ class ApiService {
   ): Promise<void> {
     console.log("[API] updateAutomation - id:", id, "data:", automationData);
     try {
-      // Map enum values if needed (for backward compatibility)
-      let sourceValue = automationData.source;
-      if (sourceValue === "USER") sourceValue = "USER_CREATED";
-      if (sourceValue === "SUGGESTED") sourceValue = "AI_SUGGESTED";
-
-      const payload = {
-        Name: automationData.name,
-        Triggers: automationData.triggers,
-        Actions: automationData.actions,
-        Source: sourceValue,
-        IsActive: automationData.isActive,
-        SuggestionStatus: automationData.suggestionStatus,
-      };
+      const payload = this.toApiAutomationUpdate(automationData);
       console.log("[API] updateAutomation - payload:", payload);
-      console.log(
-        "[API] updateAutomation - payload JSON:",
-        JSON.stringify(payload)
-      );
       await this.request<void>(`/Automations/${id}`, {
         method: "PUT",
         body: JSON.stringify(payload),

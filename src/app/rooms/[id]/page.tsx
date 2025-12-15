@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import UserLayout from "@/components/layout/UserLayout";
+import Layout from "@/components/layout/Layout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { ServiceGuard } from "@/components/auth/ServiceGuard";
 import { apiService } from "@/services/api";
@@ -130,14 +130,14 @@ export default function RoomDetailPage() {
     return (
       <ProtectedRoute>
         <ServiceGuard>
-          <UserLayout>
+          <Layout>
             <div className="px-4 sm:px-6 lg:px-8 py-8">
               <div className="text-center py-12">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
                 <p className="mt-4 text-gray-500">Đang tải thông tin phòng...</p>
               </div>
             </div>
-          </UserLayout>
+          </Layout>
         </ServiceGuard>
       </ProtectedRoute>
     );
@@ -147,7 +147,7 @@ export default function RoomDetailPage() {
     return (
       <ProtectedRoute>
         <ServiceGuard>
-          <UserLayout>
+          <Layout>
             <div className="px-4 sm:px-6 lg:px-8 py-8">
               <div className="text-center py-12">
                 <p className="text-red-600">{error || "Không tìm thấy phòng"}</p>
@@ -159,7 +159,7 @@ export default function RoomDetailPage() {
                 </button>
               </div>
             </div>
-          </UserLayout>
+          </Layout>
         </ServiceGuard>
       </ProtectedRoute>
     );
@@ -168,7 +168,7 @@ export default function RoomDetailPage() {
   return (
     <ProtectedRoute>
       <ServiceGuard>
-        <UserLayout>
+        <Layout>
           <div className="px-4 sm:px-6 lg:px-8 py-8">
             {/* Header */}
             <div className="mb-6">
@@ -418,7 +418,7 @@ export default function RoomDetailPage() {
               </button>
             </div>
           </div>
-        </UserLayout>
+        </Layout>
       </ServiceGuard>
     </ProtectedRoute>
   );
