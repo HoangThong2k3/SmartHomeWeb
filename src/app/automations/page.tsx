@@ -19,40 +19,29 @@ import {
 } from "lucide-react";
 import HomeSelector from "@/components/ui/HomeSelector";
 
-// Helper function to normalize JSON: convert device_id to deviceId (camelCase)
-function normalizeAutomationJson(jsonString: string): string {
-  if (!jsonString || !jsonString.trim()) {
-    return jsonString;
+// Helper to format trigger/action thành chuỗi mô tả thân thiện
+function buildTriggerDescription(a: Automation): string {
+  if (a.triggerType === "Time") {
+    const start = a.triggerTimeStart ?? "";
+    const end = a.triggerTimeEnd ?? "";
+    if (start || end) return `Thời gian: ${start || "?"} → ${end || "?"}`;
+    return "Kích hoạt theo thời gian";
   }
 
-  try {
-    const parsed = JSON.parse(jsonString);
-
-    // Recursive function to normalize object keys
-    const normalizeObject = (obj: any): any => {
-      if (Array.isArray(obj)) {
-        return obj.map((item) => normalizeObject(item));
-      } else if (obj !== null && typeof obj === "object") {
-        const normalized: any = {};
-        for (const key in obj) {
-          if (obj.hasOwnProperty(key)) {
-            // Convert device_id to deviceId
-            const newKey = key === "device_id" ? "deviceId" : key;
-            normalized[newKey] = normalizeObject(obj[key]);
-          }
-        }
-        return normalized;
-      }
-      return obj;
-    };
-
-    const normalized = normalizeObject(parsed);
-    return JSON.stringify(normalized);
-  } catch (e) {
-    // If parsing fails, return original string
-    console.warn("[normalizeAutomationJson] Failed to parse JSON:", e);
-    return jsonString;
+  if (a.triggerDeviceId != null) {
+    const cond = a.triggerCondition || "";
+    const val =
+      a.triggerValue != null
+        ? a.triggerValue
+        : "";
+    return `Thiết bị #${a.triggerDeviceId} ${cond} ${val}`.trim();
   }
+
+  return a.triggerType || "Không có trigger";
+}
+
+function buildActionDescription(a: Automation): string {
+  return `Thiết bị #${a.actionDeviceId} ← ${a.actionValue}`;
 }
 
 export default function AutomationsPage() {
@@ -167,10 +156,7 @@ export default function AutomationsPage() {
         }
       }
       setAutomations(allAutomations);
-      console.log(
-        "[AutomationsPage] Total automations:",
-        allAutomations.length
-      );
+      console.log("[AutomationsPage] Total automations:", allAutomations.length);
     } catch (err: any) {
       const errorMsg =
         err?.message ||
@@ -187,10 +173,7 @@ export default function AutomationsPage() {
   const handleCreateAutomation = async (automationData: any) => {
     try {
       setError(null);
-      console.log(
-        "[AutomationsPage] Creating automation with data:",
-        automationData
-      );
+      console.log("[AutomationsPage] Creating automation with data:", automationData);
       console.log(
         "[AutomationsPage] Available homes:",
         homes.map((h) => ({ id: h.id, name: h.name }))
@@ -202,12 +185,6 @@ export default function AutomationsPage() {
       }
       if (!automationData.name) {
         throw new Error("Name is required");
-      }
-      if (!automationData.triggers) {
-        throw new Error("Triggers (JSON) is required");
-      }
-      if (!automationData.actions) {
-        throw new Error("Actions (JSON) is required");
       }
 
       // Validate homeId exists in homes list
@@ -231,54 +208,36 @@ export default function AutomationsPage() {
         );
       }
 
-      // Đảm bảo triggers/actions là JSON string (backend yêu cầu)
-      try {
-        JSON.parse(automationData.triggers);
-        JSON.parse(automationData.actions);
-      } catch {
-        throw new Error("Triggers/Actions phải là chuỗi JSON hợp lệ");
-      }
-
-      // Normalize JSON: convert device_id to deviceId (camelCase)
-      console.log(
-        "[AutomationsPage] Original triggers:",
-        automationData.triggers
-      );
-      console.log(
-        "[AutomationsPage] Original actions:",
-        automationData.actions
-      );
-      const normalizedTriggers = normalizeAutomationJson(
-        automationData.triggers
-      );
-      const normalizedActions = normalizeAutomationJson(automationData.actions);
-      console.log("[AutomationsPage] Normalized triggers:", normalizedTriggers);
-      console.log("[AutomationsPage] Normalized actions:", normalizedActions);
-
       const payload = {
-        homeId: homeIdNum.toString(), // Keep as string for API
+        homeId: homeIdNum.toString(),
         name: automationData.name,
-        triggers: normalizedTriggers,
-        actions: normalizedActions,
-        source: automationData.source,
-        isActive: Boolean(automationData.isActive),
-        suggestionStatus: automationData.suggestionStatus,
+        isEnabled: Boolean(automationData.isEnabled),
+        triggerType: automationData.triggerType,
+        triggerDeviceId:
+          automationData.triggerType === "DeviceState"
+            ? Number(automationData.triggerDeviceId) || undefined
+            : undefined,
+        triggerCondition:
+          automationData.triggerType === "DeviceState"
+            ? automationData.triggerCondition || undefined
+            : undefined,
+        triggerValue:
+          automationData.triggerType === "DeviceState" &&
+          automationData.triggerValue !== ""
+            ? Number(automationData.triggerValue)
+            : undefined,
+        triggerTimeStart:
+          automationData.triggerType === "Time"
+            ? automationData.triggerTimeStart || undefined
+            : undefined,
+        triggerTimeEnd:
+          automationData.triggerType === "Time"
+            ? automationData.triggerTimeEnd || undefined
+            : undefined,
+        actionDeviceId: Number(automationData.actionDeviceId),
+        actionValue: Number(automationData.actionValue),
       };
       console.log("[AutomationsPage] Automation payload:", payload);
-      console.log(
-        "[AutomationsPage] Payload triggers JSON:",
-        JSON.stringify(payload.triggers)
-      );
-      console.log(
-        "[AutomationsPage] Payload actions JSON:",
-        JSON.stringify(payload.actions)
-      );
-      console.log(
-        "[AutomationsPage] HomeId type:",
-        typeof payload.homeId,
-        "value:",
-        payload.homeId
-      );
 
       await apiService.createAutomation(payload);
       console.log("[AutomationsPage] Automation created successfully");
@@ -326,10 +285,10 @@ export default function AutomationsPage() {
       }
       if (
         !automationData.name ||
-        !automationData.triggers ||
-        !automationData.actions
+        !automationData.triggerType ||
+        !automationData.actionDeviceId
       ) {
-        const errorMsg = "Missing required fields: Name, Triggers, Actions";
+        const errorMsg = "Missing required fields: Name, TriggerType, ActionDeviceId";
         setError(errorMsg);
         return;
       }
@@ -349,28 +308,32 @@ export default function AutomationsPage() {
         console.log("[AutomationsPage] Selected home:", selectedHome);
       }
 
-      try {
-        JSON.parse(automationData.triggers);
-        JSON.parse(automationData.actions);
-      } catch {
-        const errorMsg = "Triggers/Actions phải là JSON hợp lệ";
-        setError(errorMsg);
-        return;
-      }
-
-      // Normalize JSON: convert device_id to deviceId (camelCase)
-      const normalizedTriggers = normalizeAutomationJson(
-        automationData.triggers
-      );
-      const normalizedActions = normalizeAutomationJson(automationData.actions);
-
       const payload = {
         name: automationData.name,
-        triggers: normalizedTriggers,
-        actions: normalizedActions,
-        source: automationData.source,
-        isActive: Boolean(automationData.isActive),
-        suggestionStatus: automationData.suggestionStatus,
+        isEnabled: Boolean(automationData.isEnabled),
+        triggerType: automationData.triggerType,
+        triggerDeviceId: automationData.triggerType === "DeviceState"
+          ? Number(automationData.triggerDeviceId) || undefined
+          : undefined,
+        triggerCondition: automationData.triggerType === "DeviceState"
+          ? automationData.triggerCondition || undefined
+          : undefined,
+        triggerValue: automationData.triggerType === "DeviceState" &&
+          automationData.triggerValue !== ""
+          ? Number(automationData.triggerValue)
+          : undefined,
+        triggerTimeStart: automationData.triggerType === "Time"
+          ? automationData.triggerTimeStart || undefined
+          : undefined,
+        triggerTimeEnd: automationData.triggerType === "Time"
+          ? automationData.triggerTimeEnd || undefined
+          : undefined,
+        actionDeviceId: automationData.actionDeviceId != null
+          ? Number(automationData.actionDeviceId)
+          : undefined,
+        actionValue: automationData.actionValue != null
+          ? Number(automationData.actionValue)
+          : undefined,
       };
       console.log("[AutomationsPage] Update payload:", payload);
       console.log("[AutomationsPage] Payload JSON:", JSON.stringify(payload));
@@ -522,20 +485,8 @@ export default function AutomationsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {automations.map((automation) => {
-              const triggers = automation.triggers || automation.trigger || "";
-              const actions = automation.actions || automation.action || "";
-
-              // Try to parse and format JSON for display
-              let triggersDisplay = triggers;
-              let actionsDisplay = actions;
-              try {
-                const triggersObj = JSON.parse(triggers);
-                triggersDisplay = JSON.stringify(triggersObj, null, 2);
-              } catch {}
-              try {
-                const actionsObj = JSON.parse(actions);
-                actionsDisplay = JSON.stringify(actionsObj, null, 2);
-              } catch {}
+              const triggerText = buildTriggerDescription(automation);
+              const actionText = buildActionDescription(automation);
 
               return (
                 <div
@@ -548,21 +499,15 @@ export default function AutomationsPage() {
                         <h3 className="text-lg font-semibold text-gray-900">
                           {automation.name}
                         </h3>
-                        {automation.isActive ? (
+                        {automation.isEnabled ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
                             <Power className="w-3 h-3 mr-1" />
-                            Active
+                            Enabled
                           </span>
                         ) : (
                           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
                             <PowerOff className="w-3 h-3 mr-1" />
-                            Inactive
-                          </span>
-                        )}
-                        {(automation.source === "AI_SUGGESTED" ||
-                          automation.source === "SUGGESTED") && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                            Suggested
+                            Disabled
                           </span>
                         )}
                       </div>
@@ -571,21 +516,6 @@ export default function AutomationsPage() {
                         {getHomeName(automation.homeId)}
                       </div>
 
-                      {automation.suggestionStatus && (
-                        <div className="mb-3">
-                          <span
-                            className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                              automation.suggestionStatus === "ACCEPTED"
-                                ? "bg-green-100 text-green-800"
-                                : automation.suggestionStatus === "REJECTED"
-                                ? "bg-red-100 text-red-800"
-                                : "bg-yellow-100 text-yellow-800"
-                            }`}
-                          >
-                            {automation.suggestionStatus}
-                          </span>
-                        </div>
-                      )}
                     </div>
                     <div className="flex space-x-2 ml-2">
                       <button
@@ -635,8 +565,8 @@ export default function AutomationsPage() {
                       <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
                         Triggers
                       </span>
-                      <div className="mt-1 text-xs font-mono bg-gray-50 p-2 rounded border border-gray-200 overflow-x-auto max-h-24 overflow-y-auto">
-                        {triggersDisplay || (
+                      <div className="mt-1 text-xs bg-gray-50 p-2 rounded border border-gray-200">
+                        {triggerText || (
                           <span className="text-gray-400">No triggers</span>
                         )}
                       </div>
@@ -645,8 +575,8 @@ export default function AutomationsPage() {
                       <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
                         Actions
                       </span>
-                      <div className="mt-1 text-xs font-mono bg-gray-50 p-2 rounded border border-gray-200 overflow-x-auto max-h-24 overflow-y-auto">
-                        {actionsDisplay || (
+                      <div className="mt-1 text-xs bg-gray-50 p-2 rounded border border-gray-200">
+                        {actionText || (
                           <span className="text-gray-400">No actions</span>
                         )}
                       </div>
@@ -714,118 +644,21 @@ function CreateAutomationForm({
 }) {
   const [formData, setFormData] = useState({
     name: "",
-    triggers: "",
-    actions: "",
-    isActive: true,
+    isEnabled: true,
     homeId: "",
-    source: "USER_CREATED",
-    suggestionStatus: "PENDING",
+    triggerType: "DeviceState",
+    triggerDeviceId: "",
+    triggerCondition: ">",
+    triggerValue: "",
+    triggerTimeStart: "",
+    triggerTimeEnd: "",
+    actionDeviceId: "",
+    actionValue: "1",
   });
-
-  const [jsonErrors, setJsonErrors] = useState<{
-    triggers?: string;
-    actions?: string;
-  }>({});
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (jsonErrors.triggers || jsonErrors.actions) {
-      return;
-    }
     onSubmit(formData);
-  };
-
-  const validateJson = (field: "triggers" | "actions", value: string) => {
-    if (!value.trim()) {
-      setJsonErrors((prev) => ({ ...prev, [field]: undefined }));
-      return;
-    }
-    try {
-      JSON.parse(value);
-      setJsonErrors((prev) => ({ ...prev, [field]: undefined }));
-    } catch (e: any) {
-      setJsonErrors((prev) => ({
-        ...prev,
-        [field]: `Invalid JSON: ${e.message}`,
-      }));
-    }
-  };
-
-  const loadExample = (type: "time" | "motion" | "temperature" | "complex") => {
-    const examples = {
-      time: {
-        triggers: JSON.stringify(
-          [{ device_id: 1, condition: "==", value: 1 }],
-          null,
-          2
-        ),
-        actions: JSON.stringify(
-          [{ device_id: 2, action: "setState", value: { status: "on" } }],
-          null,
-          2
-        ),
-      },
-      motion: {
-        triggers: JSON.stringify(
-          [{ device_id: 3, condition: "==", value: "detected" }],
-          null,
-          2
-        ),
-        actions: JSON.stringify(
-          [
-            {
-              device_id: 1,
-              action: "setState",
-              value: { status: "on", brightness: 100 },
-            },
-          ],
-          null,
-          2
-        ),
-      },
-      temperature: {
-        triggers: JSON.stringify(
-          [{ device_id: 2, condition: ">", value: 25 }],
-          null,
-          2
-        ),
-        actions: JSON.stringify(
-          [{ device_id: 2, action: "setState", value: { temperature: 22 } }],
-          null,
-          2
-        ),
-      },
-      complex: {
-        triggers: JSON.stringify(
-          [
-            { device_id: 3, condition: "==", value: "detected" },
-            { device_id: 1, condition: "==", value: "off" },
-          ],
-          null,
-          2
-        ),
-        actions: JSON.stringify(
-          [
-            {
-              device_id: 1,
-              action: "setState",
-              value: { status: "on", brightness: 30 },
-            },
-            { device_id: 4, action: "setState", value: { recording: true } },
-          ],
-          null,
-          2
-        ),
-      },
-    };
-    const example = examples[type];
-    setFormData({
-      ...formData,
-      triggers: example.triggers,
-      actions: example.actions,
-    });
-    validateJson("triggers", example.triggers);
-    validateJson("actions", example.actions);
   };
 
   return (
@@ -857,96 +690,125 @@ function CreateAutomationForm({
             />
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Triggers (JSON) <span className="text-red-500">*</span>
+          {/* Trigger configuration */}
+          <div className="grid grid-cols-3 gap-4 border-t pt-4 mt-2">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Trigger Type
               </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => loadExample("time")}
-                  className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
-                >
-                  Time
-                </button>
-                <button
-                  type="button"
-                  onClick={() => loadExample("motion")}
-                  className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
-                >
-                  Motion
-                </button>
-                <button
-                  type="button"
-                  onClick={() => loadExample("temperature")}
-                  className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
-                >
-                  Temp
-                </button>
-                <button
-                  type="button"
-                  onClick={() => loadExample("complex")}
-                  className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
-                >
-                  Complex
-                </button>
-              </div>
+              <select
+                value={formData.triggerType}
+                onChange={(e) =>
+                  setFormData({ ...formData, triggerType: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="DeviceState">DeviceState</option>
+                <option value="Time">Time</option>
+              </select>
             </div>
-            <textarea
-              value={formData.triggers}
-              onChange={(e) => {
-                setFormData({ ...formData, triggers: e.target.value });
-                validateJson("triggers", e.target.value);
-              }}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 font-mono text-sm ${
-                jsonErrors.triggers
-                  ? "border-red-300 focus:ring-red-500"
-                  : "border-gray-300 focus:ring-blue-500"
-              }`}
-              rows={6}
-              placeholder='[{"device_id": 1, "condition": "==", "value": 1}]'
-              required
-            />
-            {jsonErrors.triggers && (
-              <p className="text-xs text-red-600 mt-1">{jsonErrors.triggers}</p>
+
+            {formData.triggerType === "DeviceState" && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Trigger Device Id
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.triggerDeviceId}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        triggerDeviceId: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Condition / Value
+                  </label>
+                  <div className="flex gap-2">
+                    <select
+                      value={formData.triggerCondition}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          triggerCondition: e.target.value,
+                        })
+                      }
+                      className="w-20 px-2 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    >
+                      <option value=">">{">"}</option>
+                      <option value="<">{"<"}</option>
+                      <option value="=">{"="}</option>
+                      <option value=">=">{">="}</option>
+                    </select>
+                    <input
+                      type="number"
+                      value={formData.triggerValue}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          triggerValue: e.target.value,
+                        })
+                      }
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {formData.triggerType === "Time" && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Time Start
+                  </label>
+                  <input
+                    type="time"
+                    value={formData.triggerTimeStart}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        triggerTimeStart: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Time End
+                  </label>
+                  <input
+                    type="time"
+                    value={formData.triggerTimeEnd}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        triggerTimeEnd: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
+              </>
             )}
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Actions (JSON) <span className="text-red-500">*</span>
-              </label>
-            </div>
-            <textarea
-              value={formData.actions}
-              onChange={(e) => {
-                setFormData({ ...formData, actions: e.target.value });
-                validateJson("actions", e.target.value);
-              }}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 font-mono text-sm ${
-                jsonErrors.actions
-                  ? "border-red-300 focus:ring-red-500"
-                  : "border-gray-300 focus:ring-blue-500"
-              }`}
-              rows={6}
-              placeholder='[{"device_id": 2, "action": "setState", "value": {"status": "on"}}]'
-              required
-            />
-            {jsonErrors.actions && (
-              <p className="text-xs text-red-600 mt-1">{jsonErrors.actions}</p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
+          {/* Action & status */}
+          <div className="grid grid-cols-3 gap-4 mt-4">
             <div className="flex items-center">
               <input
                 type="checkbox"
                 id="isActive"
-                checked={formData.isActive}
+                checked={formData.isEnabled}
                 onChange={(e) =>
-                  setFormData({ ...formData, isActive: e.target.checked })
+                  setFormData({ ...formData, isEnabled: e.target.checked })
                 }
                 className="mr-2"
               />
@@ -959,41 +821,37 @@ function CreateAutomationForm({
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Source
+                Action Device Id
               </label>
-              <select
-                value={formData.source}
+              <input
+                type="number"
+                value={formData.actionDeviceId}
                 onChange={(e) =>
-                  setFormData({ ...formData, source: e.target.value })
+                  setFormData({ ...formData, actionDeviceId: e.target.value })
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              >
-                <option value="USER_CREATED">USER_CREATED</option>
-                <option value="AI_SUGGESTED">AI_SUGGESTED</option>
-              </select>
+                placeholder="VD: 18"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Status
+                Action Value
               </label>
-              <select
-                value={formData.suggestionStatus}
+              <input
+                type="number"
+                value={formData.actionValue}
                 onChange={(e) =>
-                  setFormData({ ...formData, suggestionStatus: e.target.value })
+                  setFormData({ ...formData, actionValue: e.target.value })
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              >
-                <option value="PENDING">PENDING</option>
-                <option value="ACCEPTED">ACCEPTED</option>
-                <option value="REJECTED">REJECTED</option>
-              </select>
+                placeholder="VD: 1 = ON, 0 = OFF"
+              />
             </div>
           </div>
 
           <div className="flex space-x-3 pt-4 border-t">
             <button
               type="submit"
-              disabled={!!jsonErrors.triggers || !!jsonErrors.actions}
               className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
               Create
@@ -1023,162 +881,26 @@ function EditAutomationForm({
   onSubmit: (data: any) => void;
   onCancel: () => void;
 }) {
-  const triggers = automation.triggers || automation.trigger || "";
-  const actions = automation.actions || automation.action || "";
-
-  // Helper function to convert deviceId to device_id for display
-  const convertToDisplayFormat = (jsonString: string): string => {
-    if (!jsonString || !jsonString.trim()) {
-      return jsonString;
-    }
-    try {
-      const parsed = JSON.parse(jsonString);
-      const convertObject = (obj: any): any => {
-        if (Array.isArray(obj)) {
-          return obj.map((item) => convertObject(item));
-        } else if (obj !== null && typeof obj === "object") {
-          const converted: any = {};
-          for (const key in obj) {
-            if (obj.hasOwnProperty(key)) {
-              // Convert deviceId to device_id for display
-              const newKey = key === "deviceId" ? "device_id" : key;
-              converted[newKey] = convertObject(obj[key]);
-            }
-          }
-          return converted;
-        }
-        return obj;
-      };
-      const converted = convertObject(parsed);
-      return JSON.stringify(converted, null, 2);
-    } catch {
-      return jsonString;
-    }
-  };
-
-  // Try to format JSON for display in form
-  let formattedTriggers = triggers;
-  let formattedActions = actions;
-  try {
-    formattedTriggers = convertToDisplayFormat(triggers);
-  } catch {}
-  try {
-    formattedActions = convertToDisplayFormat(actions);
-  } catch {}
-
   const [formData, setFormData] = useState({
     name: automation.name,
-    triggers: formattedTriggers,
-    actions: formattedActions,
-    isActive: automation.isActive,
+    isEnabled: automation.isEnabled,
     homeId: automation.homeId,
-    source: automation.source || "USER_CREATED",
-    suggestionStatus: automation.suggestionStatus || "PENDING",
+    triggerType: automation.triggerType || "DeviceState",
+    triggerDeviceId:
+      automation.triggerDeviceId != null
+        ? String(automation.triggerDeviceId)
+        : "",
+    triggerCondition: automation.triggerCondition || ">",
+    triggerValue:
+      automation.triggerValue != null ? String(automation.triggerValue) : "",
+    triggerTimeStart: automation.triggerTimeStart || "",
+    triggerTimeEnd: automation.triggerTimeEnd || "",
+    actionDeviceId: String(automation.actionDeviceId || ""),
+    actionValue: String(automation.actionValue ?? "1"),
   });
-
-  const [jsonErrors, setJsonErrors] = useState<{
-    triggers?: string;
-    actions?: string;
-  }>({});
-
-  const validateJson = (field: "triggers" | "actions", value: string) => {
-    if (!value.trim()) {
-      setJsonErrors((prev) => ({ ...prev, [field]: undefined }));
-      return;
-    }
-    try {
-      JSON.parse(value);
-      setJsonErrors((prev) => ({ ...prev, [field]: undefined }));
-    } catch (e: any) {
-      setJsonErrors((prev) => ({
-        ...prev,
-        [field]: `Invalid JSON: ${e.message}`,
-      }));
-    }
-  };
-
-  const loadExample = (type: "time" | "motion" | "temperature" | "complex") => {
-    const examples = {
-      time: {
-        triggers: JSON.stringify(
-          [{ device_id: 1, condition: "==", value: 1 }],
-          null,
-          2
-        ),
-        actions: JSON.stringify(
-          [{ device_id: 2, action: "setState", value: { status: "on" } }],
-          null,
-          2
-        ),
-      },
-      motion: {
-        triggers: JSON.stringify(
-          [{ device_id: 3, condition: "==", value: "detected" }],
-          null,
-          2
-        ),
-        actions: JSON.stringify(
-          [
-            {
-              device_id: 1,
-              action: "setState",
-              value: { status: "on", brightness: 100 },
-            },
-          ],
-          null,
-          2
-        ),
-      },
-      temperature: {
-        triggers: JSON.stringify(
-          [{ device_id: 2, condition: ">", value: 25 }],
-          null,
-          2
-        ),
-        actions: JSON.stringify(
-          [{ device_id: 2, action: "setState", value: { temperature: 22 } }],
-          null,
-          2
-        ),
-      },
-      complex: {
-        triggers: JSON.stringify(
-          [
-            { device_id: 3, condition: "==", value: "detected" },
-            { device_id: 1, condition: "==", value: "off" },
-          ],
-          null,
-          2
-        ),
-        actions: JSON.stringify(
-          [
-            {
-              device_id: 1,
-              action: "setState",
-              value: { status: "on", brightness: 30 },
-            },
-            { device_id: 4, action: "setState", value: { recording: true } },
-          ],
-          null,
-          2
-        ),
-      },
-    };
-    const example = examples[type];
-    setFormData({
-      ...formData,
-      triggers: example.triggers,
-      actions: example.actions,
-    });
-    validateJson("triggers", example.triggers);
-    validateJson("actions", example.actions);
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (jsonErrors.triggers || jsonErrors.actions) {
-      return;
-    }
     onSubmit(formData);
   };
 
@@ -1210,94 +932,125 @@ function EditAutomationForm({
             />
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Triggers (JSON) <span className="text-red-500">*</span>
+          {/* Trigger configuration */}
+          <div className="grid grid-cols-3 gap-4 border-t pt-4 mt-2">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Trigger Type
               </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => loadExample("time")}
-                  className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
-                >
-                  Time
-                </button>
-                <button
-                  type="button"
-                  onClick={() => loadExample("motion")}
-                  className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
-                >
-                  Motion
-                </button>
-                <button
-                  type="button"
-                  onClick={() => loadExample("temperature")}
-                  className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
-                >
-                  Temp
-                </button>
-                <button
-                  type="button"
-                  onClick={() => loadExample("complex")}
-                  className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
-                >
-                  Complex
-                </button>
-              </div>
+              <select
+                value={formData.triggerType}
+                onChange={(e) =>
+                  setFormData({ ...formData, triggerType: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="DeviceState">DeviceState</option>
+                <option value="Time">Time</option>
+              </select>
             </div>
-            <textarea
-              value={formData.triggers}
-              onChange={(e) => {
-                setFormData({ ...formData, triggers: e.target.value });
-                validateJson("triggers", e.target.value);
-              }}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 font-mono text-sm ${
-                jsonErrors.triggers
-                  ? "border-red-300 focus:ring-red-500"
-                  : "border-gray-300 focus:ring-blue-500"
-              }`}
-              rows={6}
-              required
-            />
-            {jsonErrors.triggers && (
-              <p className="text-xs text-red-600 mt-1">{jsonErrors.triggers}</p>
+
+            {formData.triggerType === "DeviceState" && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Trigger Device Id
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.triggerDeviceId}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        triggerDeviceId: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Condition / Value
+                  </label>
+                  <div className="flex gap-2">
+                    <select
+                      value={formData.triggerCondition}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          triggerCondition: e.target.value,
+                        })
+                      }
+                      className="w-20 px-2 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    >
+                      <option value=">">{">"}</option>
+                      <option value="<">{"<"}</option>
+                      <option value="=">{"="}</option>
+                      <option value=">=">{">="}</option>
+                    </select>
+                    <input
+                      type="number"
+                      value={formData.triggerValue}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          triggerValue: e.target.value,
+                        })
+                      }
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {formData.triggerType === "Time" && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Time Start
+                  </label>
+                  <input
+                    type="time"
+                    value={formData.triggerTimeStart}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        triggerTimeStart: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Time End
+                  </label>
+                  <input
+                    type="time"
+                    value={formData.triggerTimeEnd}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        triggerTimeEnd: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
+              </>
             )}
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Actions (JSON) <span className="text-red-500">*</span>
-              </label>
-            </div>
-            <textarea
-              value={formData.actions}
-              onChange={(e) => {
-                setFormData({ ...formData, actions: e.target.value });
-                validateJson("actions", e.target.value);
-              }}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 font-mono text-sm ${
-                jsonErrors.actions
-                  ? "border-red-300 focus:ring-red-500"
-                  : "border-gray-300 focus:ring-blue-500"
-              }`}
-              rows={6}
-              required
-            />
-            {jsonErrors.actions && (
-              <p className="text-xs text-red-600 mt-1">{jsonErrors.actions}</p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
+          {/* Action & status */}
+          <div className="grid grid-cols-3 gap-4 mt-4">
             <div className="flex items-center">
               <input
                 type="checkbox"
                 id="isActiveEdit"
-                checked={formData.isActive}
+                checked={formData.isEnabled}
                 onChange={(e) =>
-                  setFormData({ ...formData, isActive: e.target.checked })
+                  setFormData({ ...formData, isEnabled: e.target.checked })
                 }
                 className="mr-2"
               />
@@ -1310,41 +1063,35 @@ function EditAutomationForm({
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Source
+                Action Device Id
               </label>
-              <select
-                value={formData.source}
+              <input
+                type="number"
+                value={formData.actionDeviceId}
                 onChange={(e) =>
-                  setFormData({ ...formData, source: e.target.value })
+                  setFormData({ ...formData, actionDeviceId: e.target.value })
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              >
-                <option value="USER_CREATED">USER_CREATED</option>
-                <option value="AI_SUGGESTED">AI_SUGGESTED</option>
-              </select>
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Status
+                Action Value
               </label>
-              <select
-                value={formData.suggestionStatus}
+              <input
+                type="number"
+                value={formData.actionValue}
                 onChange={(e) =>
-                  setFormData({ ...formData, suggestionStatus: e.target.value })
+                  setFormData({ ...formData, actionValue: e.target.value })
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              >
-                <option value="PENDING">PENDING</option>
-                <option value="ACCEPTED">ACCEPTED</option>
-                <option value="REJECTED">REJECTED</option>
-              </select>
+              />
             </div>
           </div>
 
           <div className="flex space-x-3 pt-4 border-t">
             <button
               type="submit"
-              disabled={!!jsonErrors.triggers || !!jsonErrors.actions}
               className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
               Update

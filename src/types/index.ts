@@ -213,39 +213,54 @@ export interface UpdateDeviceRequest {
 export interface Automation {
   id: string;
   name: string;
-  description?: string;
-  trigger?: string; // Legacy field, use triggers instead
-  action?: string; // Legacy field, use actions instead
-  triggers?: string; // JSON string from API
-  actions?: string; // JSON string from API
-  source?: string; // USER_CREATED | AI_SUGGESTED (legacy: USER | SUGGESTED)
-  suggestionStatus?: string; // PENDING | ACCEPTED | REJECTED
-  isActive: boolean;
   homeId: string;
-  home?: Home;
+  /** Có đang kích hoạt luật hay không (maps to IsEnabled) */
+  isEnabled: boolean;
+
+  /** Loại trigger: "DeviceState" | "Time" | ... (maps to TriggerType) */
+  triggerType: string;
+
+  /** Trigger theo trạng thái thiết bị (maps to TriggerDeviceId / TriggerCondition / TriggerValue) */
+  triggerDeviceId?: number | null;
+  triggerCondition?: string | null;
+  triggerValue?: number | null;
+
+  /** Trigger theo thời gian (maps to TriggerTimeStart / TriggerTimeEnd, backend dùng TimeSpan) */
+  triggerTimeStart?: string | null; // dạng "HH:mm:ss"
+  triggerTimeEnd?: string | null; // dạng "HH:mm:ss"
+
+  /** Thiết bị bị tác động và giá trị hành động (maps to ActionDeviceId / ActionValue) */
+  actionDeviceId: number;
+  actionValue: number;
+
   createdAt?: string;
-  updatedAt?: string;
 }
 
 export interface CreateAutomationRequest {
   name: string;
-  // description is not supported by API
-  triggers: string;
-  actions: string;
-  source?: string;
-  isActive: boolean;
-  suggestionStatus?: string;
   homeId: string;
+  isEnabled: boolean;
+  triggerType: string;
+  triggerDeviceId?: number;
+  triggerCondition?: string;
+  triggerValue?: number;
+  triggerTimeStart?: string;
+  triggerTimeEnd?: string;
+  actionDeviceId: number;
+  actionValue: number;
 }
 
 export interface UpdateAutomationRequest {
   name?: string;
-  // description is not supported by API
-  triggers?: string;
-  actions?: string;
-  source?: string;
-  isActive?: boolean;
-  suggestionStatus?: string;
+  isEnabled?: boolean;
+  triggerType?: string;
+  triggerDeviceId?: number | null;
+  triggerCondition?: string | null;
+  triggerValue?: number | null;
+  triggerTimeStart?: string | null;
+  triggerTimeEnd?: string | null;
+  actionDeviceId?: number;
+  actionValue?: number;
 }
 
 // Sensor Data Types
