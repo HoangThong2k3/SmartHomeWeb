@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { RegisterRequest } from "@/types";
-import { Eye, EyeOff, UserPlus } from "lucide-react";
+import { Eye, EyeOff, UserPlus, ArrowLeft } from "lucide-react";
+import Link from "next/link";
 
 interface RegisterFormProps {
   onSuccess?: () => void;
@@ -72,14 +73,38 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
       setIsLoading(false);
       return;
     }
-    if (formData.phoneNumber && !formData.phoneNumber.startsWith("+")) {
-      setError("Phone number must start with + (e.g., +84123456789)");
-      setIsLoading(false);
-      return;
+    // Auto-format phone number: nếu là số VN (bắt đầu bằng 0) thì tự động thêm +84
+    let formattedPhone = formData.phoneNumber.trim();
+    if (formattedPhone) {
+      // Nếu bắt đầu bằng 0, thay bằng +84
+      if (formattedPhone.startsWith("0")) {
+        formattedPhone = "+84" + formattedPhone.substring(1);
+      }
+      // Nếu không có dấu +, thêm +84 (giả định là số VN)
+      else if (!formattedPhone.startsWith("+")) {
+        formattedPhone = "+84" + formattedPhone;
+      }
+      // Validate: phải có ít nhất 10 số sau country code
+      const digitsOnly = formattedPhone.replace(/\D/g, "");
+      if (digitsOnly.length < 10) {
+        setError("Số điện thoại không hợp lệ. Vui lòng nhập đúng số điện thoại.");
+        setIsLoading(false);
+        return;
+      }
+      // Update formData với số đã format
+      formData.phoneNumber = formattedPhone;
     }
     try {
-      await register(formData as any); // api layer đã map đúng field
-      alert("Đăng ký thành công! Bạn sẽ được chuyển đến trang đăng nhập.");
+      const result = await register(formData as any); // api layer đã map đúng field
+      
+      // Đăng ký thành công - redirect đến login page
+      alert("Đăng ký thành công! Vui lòng kiểm tra email để xác nhận tài khoản, sau đó đăng nhập.");
+      
+      // Redirect đến login page
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+      
       onSuccess?.();
     } catch (error: any) {
       setError(error.message || "Registration failed. Please try again.");
@@ -132,8 +157,14 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
               formData.name || undefined,
               formData.phoneNumber || undefined
             );
-            alert("Đăng ký bằng Google thành công! Bạn sẽ được chuyển đến trang đăng nhập.");
-            onSuccess?.();
+            
+            // Google register tự động login theo API spec
+            // Redirect đến dashboard
+            const raw = localStorage.getItem("user");
+            const parsed = raw ? JSON.parse(raw) : null;
+            const role = (parsed?.role || "").toString().toLowerCase();
+            const dest = role === "admin" ? "/admin" : "/user-dashboard";
+            window.location.href = dest;
           } catch (err: any) {
             setError(err?.message || "Google registration failed. Please try again.");
             setIsLoading(false);
@@ -187,6 +218,17 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
+        {/* Back to Home Button */}
+        <div className="flex justify-start">
+          <Link
+            href="/"
+            className="inline-flex items-center text-sm text-gray-600 hover:text-blue-600 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4 mr-1" />
+            Về trang chủ
+          </Link>
+        </div>
+
         <div>
           <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-green-100">
             <UserPlus className="h-6 w-6 text-green-600" />
