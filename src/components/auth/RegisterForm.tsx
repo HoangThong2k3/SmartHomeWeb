@@ -34,6 +34,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isGoogleReady, setIsGoogleReady] = useState(false);
 
+
   // Load Google Identity Services script once
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -129,7 +130,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
       const google = (window as any).google;
       const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
-      // Nếu thiếu cấu hình hoặc SDK chưa sẵn sàng -> chỉ báo lỗi, không yêu cầu user nhập IdToken
       if (!clientId || !isGoogleReady || !google?.accounts?.id) {
         setError(
           "Google Register chưa được cấu hình đầy đủ trên hệ thống. Vui lòng liên hệ admin để cấu hình Google Client ID."
@@ -138,13 +138,22 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
         return;
       }
 
+      // Cancel any existing sessions
+      try {
+        google.accounts.id.cancel();
+      } catch (e) {
+        // Ignore
+      }
+
       let handled = false;
 
+      // Initialize với context: signup (quan trọng để tránh cool-down)
       google.accounts.id.initialize({
         client_id: clientId,
         callback: async (response: any) => {
           if (handled) return;
           handled = true;
+          
           try {
             const idToken = response.credential;
             if (!idToken) {
@@ -170,47 +179,53 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
             setIsLoading(false);
           }
         },
+        context: 'signup',
+        ux_mode: 'popup',
         auto_select: false,
-        error_callback: (error: any) => {
-          console.error("Google Identity Services error:", error);
-          if (handled) return;
-          handled = true;
-          setIsLoading(false);
-          if (error.type === "popup_failed" || error.type === "popup_closed") {
-            setError("Popup Google đã bị đóng. Vui lòng thử lại.");
-          } else if (error.type === "idp_error") {
-            setError("Lỗi cấu hình Google OAuth. Vui lòng kiểm tra Google Client ID và Authorized JavaScript origins trong Google Cloud Console.");
-          } else {
-            setError("Lỗi đăng ký Google: " + (error.message || "Unknown error"));
-          }
-        },
       });
 
-      // Mở hộp thoại chọn tài khoản Google
-      try {
-        google.accounts.id.prompt((notification: any) => {
-          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-            // Nếu prompt không hiển thị, thử dùng One Tap
-            console.log("Prompt not displayed, trying One Tap...");
-            google.accounts.id.renderButton(
-              document.getElementById("google-register-button") || document.body,
-              {
-                theme: "outline",
-                size: "large",
-                text: "signup_with",
-                width: 300,
-              }
-            );
-          }
-        });
-      } catch (promptError: any) {
-        console.error("Error showing Google prompt:", promptError);
-        setError("Không thể mở popup Google. Vui lòng kiểm tra cấu hình Google Client ID.");
-        setIsLoading(false);
-      }
+      // Render button vào container tạm để trigger popup
+      const tempContainer = document.createElement('div');
+      tempContainer.style.display = 'none';
+      document.body.appendChild(tempContainer);
+      
+      // Render button và trigger click
+      google.accounts.id.renderButton(tempContainer, {
+        type: 'standard',
+        theme: 'outline',
+        size: 'large',
+        text: 'signup_with',
+      });
+      
+      // Tìm button và click để mở popup
+      setTimeout(() => {
+        const button = tempContainer.querySelector('div[role="button"]') as HTMLElement;
+        if (button) {
+          button.click();
+          // Cleanup sau khi click
+          setTimeout(() => {
+            try {
+              document.body.removeChild(tempContainer);
+            } catch (e) {
+              // Ignore
+            }
+          }, 100);
+        } else {
+          setIsLoading(false);
+          setError("Không thể mở popup Google. Vui lòng thử lại.");
+          document.body.removeChild(tempContainer);
+        }
+      }, 100);
+      
+      // Timeout để reset loading nếu user không làm gì
+      setTimeout(() => {
+        if (!handled) {
+          setIsLoading(false);
+        }
+      }, 1000);
     } catch (err: any) {
       console.error("Google register error:", err);
-      setError(err?.message || "Google registration failed. Please try again.");
+      setError(err?.message || "Không thể kết nối Google. Vui lòng thử lại.");
       setIsLoading(false);
     }
   };
@@ -387,8 +402,6 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
                 "Đăng ký bằng Google"
               )}
             </button>
-            {/* Placeholder cho Google button nếu prompt fail */}
-            <div id="google-register-button" className="hidden"></div>
           </div>
           {onSwitchToLogin && (
             <div className="text-center">
