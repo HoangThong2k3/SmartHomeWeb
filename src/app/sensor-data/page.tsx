@@ -584,7 +584,7 @@ export default function SensorDataPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {sensorData.map((rawItem) => {
+                  {sensorData.map((rawItem, index) => {
                     const item = normalizeSensorData(rawItem);
                     const parsedValue = parseSensorValue(item.value);
                     const temp =
@@ -595,8 +595,10 @@ export default function SensorDataPage() {
                       typeof (parsedValue as any)?.humidity === "number"
                         ? (parsedValue as any).humidity
                         : null;
+                    // Create stable key using id, deviceId, timeStamp, and index
+                    const stableKey = item.id || `${item.deviceId}-${item.timeStamp}-${index}` || `sensor-${index}`;
                     return (
-                      <tr key={item.id || Math.random()} className="hover:bg-gray-50">
+                      <tr key={stableKey} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           {item.deviceId || "N/A"}
                         </td>
@@ -674,11 +676,21 @@ function CreateSensorDataForm({
   onSubmit: (data: any) => void;
   onCancel: () => void;
 }) {
+  // Initialize with empty timestamp to avoid hydration mismatch
+  // Set it in useEffect after mount (client-side only)
   const [formData, setFormData] = useState({
     deviceId: "",
     value: "",
-    timeStamp: new Date().toISOString().slice(0, 16),
+    timeStamp: "",
   });
+
+  // Set timestamp on client mount to avoid hydration mismatch
+  useEffect(() => {
+    setFormData(prev => ({
+      ...prev,
+      timeStamp: new Date().toISOString().slice(0, 16),
+    }));
+  }, []);
 
   const [jsonError, setJsonError] = useState<string | undefined>();
 
@@ -924,8 +936,18 @@ function EditSensorDataForm({
     value: formattedValue,
     timeStamp: normalizedData.timeStamp
       ? new Date(normalizedData.timeStamp).toISOString().slice(0, 16)
-      : new Date().toISOString().slice(0, 16),
+      : "",
   });
+
+  // Set default timestamp on client mount if not provided
+  useEffect(() => {
+    if (!formData.timeStamp) {
+      setFormData(prev => ({
+        ...prev,
+        timeStamp: new Date().toISOString().slice(0, 16),
+      }));
+    }
+  }, [formData.timeStamp]);
 
   const [jsonError, setJsonError] = useState<string | undefined>();
 

@@ -256,38 +256,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsLoading(true);
       const raw = (await apiService.register(userData)) as any;
       console.log("Raw register response:", raw);
-      handleAuthSuccess(raw, userData.email, userData.name);
+      
+      // Theo API spec, register trả về accessToken: null, refreshToken: null
+      // Không auto-login, chỉ return success để frontend redirect đến login page
+      // Chỉ throw error nếu registration thất bại
+      if (!raw?.isSuccess && raw?.isSuccess !== undefined) {
+        throw new Error(raw?.message || "Registration failed");
+      }
+      
+      // Success - không gọi handleAuthSuccess vì không có token
+      // Frontend sẽ redirect đến login page
+      return raw;
     } catch (error) {
       console.error("Registration failed:", error);
-
-      // Fallback for testing when API is down
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      if (
-        errorMessage.includes("CORS") ||
-        errorMessage.includes("Failed to fetch")
-      ) {
-        console.log("API is down, using fallback for testing...");
-        const fallbackUser: User = {
-          id: "1",
-          name: userData.name || userData.email.split("@")[0],
-          email: userData.email,
-          role: "customer",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-
-        setToken("fallback-token");
-        setRefreshToken(null);
-        setUser(fallbackUser);
-        localStorage.setItem("authToken", "fallback-token");
-        localStorage.removeItem("refreshToken");
-        localStorage.setItem("user", JSON.stringify(fallbackUser));
-
-        // Redirect immediately
-        window.location.href = "/user-dashboard";
-        return;
-      }
-
       throw error;
     } finally {
       setIsLoading(false);
@@ -311,6 +292,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsLoading(true);
       const raw = await apiService.googleRegister({ idToken, fullName, phoneNumber });
       console.log("Raw google register response:", raw);
+      // Theo API spec, google-register tự động login sau khi register thành công
+      // Response giống /api/auth/login, có accessToken và refreshToken
       handleAuthSuccess(raw);
     } finally {
       setIsLoading(false);

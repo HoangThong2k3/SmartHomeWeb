@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { LoginRequest } from "@/types";
-import { Eye, EyeOff, LogIn } from "lucide-react";
+import { Eye, EyeOff, LogIn, ArrowLeft, Home } from "lucide-react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 interface LoginFormProps {
   onSuccess?: () => void;
@@ -64,7 +65,26 @@ export const LoginForm: React.FC<LoginFormProps> = ({
       const dest = role === "admin" ? "/admin" : "/user-dashboard";
       window.location.href = dest;
     } catch (error: any) {
-      setError(error.message || "Login failed. Please try again.");
+      // Parse error message để hiển thị user-friendly
+      let errorMessage = "Đăng nhập thất bại. Vui lòng thử lại.";
+      
+      if (error?.message) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes("invalid") || msg.includes("incorrect") || msg.includes("wrong")) {
+          errorMessage = "Email hoặc mật khẩu không đúng. Vui lòng kiểm tra lại.";
+        } else if (msg.includes("not found") || msg.includes("does not exist")) {
+          errorMessage = "Tài khoản không tồn tại. Vui lòng kiểm tra lại email.";
+        } else if (msg.includes("unauthorized") || msg.includes("401")) {
+          errorMessage = "Email hoặc mật khẩu không đúng.";
+        } else if (msg.includes("network") || msg.includes("fetch")) {
+          errorMessage = "Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng.";
+        } else {
+          // Giữ nguyên message nếu là message rõ ràng
+          errorMessage = error.message.replace(/API Error for.*?:/i, "").trim() || errorMessage;
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -168,6 +188,17 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
+        {/* Back to Home Button */}
+        <div className="flex justify-start">
+          <Link
+            href="/"
+            className="inline-flex items-center text-sm text-gray-600 hover:text-blue-600 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4 mr-1" />
+            Về trang chủ
+          </Link>
+        </div>
+
         <div>
           <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-blue-100">
             <LogIn className="h-6 w-6 text-blue-600" />
