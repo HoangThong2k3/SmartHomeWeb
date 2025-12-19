@@ -78,8 +78,16 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
       return;
     }
     try {
-      await register(formData as any); // api layer đã map đúng field
-      alert("Đăng ký thành công! Bạn sẽ được chuyển đến trang đăng nhập.");
+      const result = await register(formData as any); // api layer đã map đúng field
+      
+      // Đăng ký thành công - redirect đến login page
+      alert("Đăng ký thành công! Vui lòng kiểm tra email để xác nhận tài khoản, sau đó đăng nhập.");
+      
+      // Redirect đến login page
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+      
       onSuccess?.();
     } catch (error: any) {
       setError(error.message || "Registration failed. Please try again.");
@@ -132,8 +140,14 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
               formData.name || undefined,
               formData.phoneNumber || undefined
             );
-            alert("Đăng ký bằng Google thành công! Bạn sẽ được chuyển đến trang đăng nhập.");
-            onSuccess?.();
+            
+            // Google register tự động login theo API spec
+            // Redirect đến dashboard
+            const raw = localStorage.getItem("user");
+            const parsed = raw ? JSON.parse(raw) : null;
+            const role = (parsed?.role || "").toString().toLowerCase();
+            const dest = role === "admin" ? "/admin" : "/user-dashboard";
+            window.location.href = dest;
           } catch (err: any) {
             setError(err?.message || "Google registration failed. Please try again.");
             setIsLoading(false);
