@@ -21,27 +21,29 @@ import HomeSelector from "@/components/ui/HomeSelector";
 
 // Helper to format trigger/action thành chuỗi mô tả thân thiện
 function buildTriggerDescription(a: Automation): string {
-  if (a.triggerType === "Time") {
-    const start = a.triggerTimeStart ?? "";
-    const end = a.triggerTimeEnd ?? "";
+  const triggerType = (a as any).TriggerType ?? (a as any).triggerType ?? "";
+  const start = (a as any).TriggerTimeStart ?? (a as any).triggerTimeStart ?? "";
+  const end = (a as any).TriggerTimeEnd ?? (a as any).triggerTimeEnd ?? "";
+  if (triggerType === "Time") {
     if (start || end) return `Thời gian: ${start || "?"} → ${end || "?"}`;
     return "Kích hoạt theo thời gian";
   }
 
-  if (a.triggerDeviceId != null) {
-    const cond = a.triggerCondition || "";
+  const triggerDeviceId = (a as any).TriggerDeviceId ?? (a as any).triggerDeviceId;
+  if (triggerDeviceId != null) {
+    const cond = (a as any).TriggerCondition ?? (a as any).triggerCondition ?? "";
     const val =
-      a.triggerValue != null
-        ? a.triggerValue
-        : "";
-    return `Thiết bị #${a.triggerDeviceId} ${cond} ${val}`.trim();
+      (a as any).TriggerValue ?? (a as any).triggerValue ?? "";
+    return `Thiết bị #${triggerDeviceId} ${cond} ${val}`.trim();
   }
 
-  return a.triggerType || "Không có trigger";
+  return triggerType || "Không có trigger";
 }
 
 function buildActionDescription(a: Automation): string {
-  return `Thiết bị #${a.actionDeviceId} ← ${a.actionValue}`;
+  const actionDeviceId = (a as any).ActionDeviceId ?? (a as any).actionDeviceId ?? "";
+  const actionValue = (a as any).ActionValue ?? (a as any).actionValue ?? "";
+  return `Thiết bị #${actionDeviceId} ← ${actionValue}`;
 }
 
 export default function AutomationsPage() {
@@ -129,10 +131,10 @@ export default function AutomationsPage() {
 
       // Fetch automations for each home
       const allAutomations: Automation[] = [];
-      for (const home of userHomes) {
+          for (const home of userHomes) {
         try {
           const homeAutomations = await apiService.getAutomationsByHome(
-            home.id
+            Number(home.id)
           );
           allAutomations.push(...homeAutomations);
           console.log(
@@ -209,33 +211,33 @@ export default function AutomationsPage() {
       }
 
       const payload = {
-        homeId: homeIdNum.toString(),
-        name: automationData.name,
-        isEnabled: Boolean(automationData.isEnabled),
-        triggerType: automationData.triggerType,
-        triggerDeviceId:
+        HomeId: homeIdNum,
+        Name: automationData.name,
+        IsEnabled: Boolean(automationData.isEnabled),
+        TriggerType: automationData.triggerType,
+        TriggerDeviceId:
           automationData.triggerType === "DeviceState"
             ? Number(automationData.triggerDeviceId) || undefined
             : undefined,
-        triggerCondition:
+        TriggerCondition:
           automationData.triggerType === "DeviceState"
             ? automationData.triggerCondition || undefined
             : undefined,
-        triggerValue:
+        TriggerValue:
           automationData.triggerType === "DeviceState" &&
           automationData.triggerValue !== ""
             ? Number(automationData.triggerValue)
             : undefined,
-        triggerTimeStart:
+        TriggerTimeStart:
           automationData.triggerType === "Time"
             ? automationData.triggerTimeStart || undefined
             : undefined,
-        triggerTimeEnd:
+        TriggerTimeEnd:
           automationData.triggerType === "Time"
             ? automationData.triggerTimeEnd || undefined
             : undefined,
-        actionDeviceId: Number(automationData.actionDeviceId),
-        actionValue: Number(automationData.actionValue),
+        ActionDeviceId: Number(automationData.actionDeviceId),
+        ActionValue: Number(automationData.actionValue),
       };
       console.log("[AutomationsPage] Automation payload:", payload);
 
@@ -258,7 +260,7 @@ export default function AutomationsPage() {
     }
   };
 
-  const handleUpdateAutomation = async (id: string, automationData: any) => {
+  const handleUpdateAutomation = async (id: number, automationData: any) => {
     try {
       setError(null);
       console.log("[AutomationsPage] Updating automation:", id, automationData);
@@ -273,22 +275,14 @@ export default function AutomationsPage() {
         homes.map((h) => ({ id: h.id, name: h.name }))
       );
 
-      if (
-        !id ||
-        id === "Unknown" ||
-        (typeof id === "string" && id.trim() === "")
-      ) {
+      if (!id || Number.isNaN(id) || id <= 0) {
         const errorMsg = "Invalid Automation ID. Cannot update.";
         console.error("[AutomationsPage] Invalid ID:", id);
         setError(errorMsg);
         return;
       }
-      if (
-        !automationData.name ||
-        !automationData.triggerType ||
-        !automationData.actionDeviceId
-      ) {
-        const errorMsg = "Missing required fields: Name, TriggerType, ActionDeviceId";
+      if (!automationData.Name) {
+        const errorMsg = "Name is required for update";
         setError(errorMsg);
         return;
       }
@@ -309,31 +303,8 @@ export default function AutomationsPage() {
       }
 
       const payload = {
-        name: automationData.name,
-        isEnabled: Boolean(automationData.isEnabled),
-        triggerType: automationData.triggerType,
-        triggerDeviceId: automationData.triggerType === "DeviceState"
-          ? Number(automationData.triggerDeviceId) || undefined
-          : undefined,
-        triggerCondition: automationData.triggerType === "DeviceState"
-          ? automationData.triggerCondition || undefined
-          : undefined,
-        triggerValue: automationData.triggerType === "DeviceState" &&
-          automationData.triggerValue !== ""
-          ? Number(automationData.triggerValue)
-          : undefined,
-        triggerTimeStart: automationData.triggerType === "Time"
-          ? automationData.triggerTimeStart || undefined
-          : undefined,
-        triggerTimeEnd: automationData.triggerType === "Time"
-          ? automationData.triggerTimeEnd || undefined
-          : undefined,
-        actionDeviceId: automationData.actionDeviceId != null
-          ? Number(automationData.actionDeviceId)
-          : undefined,
-        actionValue: automationData.actionValue != null
-          ? Number(automationData.actionValue)
-          : undefined,
+        Name: automationData.Name,
+        IsEnabled: Boolean(automationData.IsEnabled),
       };
       console.log("[AutomationsPage] Update payload:", payload);
       console.log("[AutomationsPage] Payload JSON:", JSON.stringify(payload));
@@ -357,7 +328,7 @@ export default function AutomationsPage() {
     }
   };
 
-  const handleDeleteAutomation = async (id: string) => {
+  const handleDeleteAutomation = async (id: number) => {
     if (!confirm("Are you sure you want to delete this automation?")) return;
 
     try {
@@ -370,11 +341,7 @@ export default function AutomationsPage() {
         id
       );
 
-      if (
-        !id ||
-        id === "Unknown" ||
-        (typeof id === "string" && id.trim() === "")
-      ) {
+      if (!id || Number.isNaN(id) || id <= 0) {
         const errorMsg = "Invalid Automation ID. Cannot delete.";
         console.error("[AutomationsPage] Invalid ID:", id);
         setError(errorMsg);
@@ -487,19 +454,23 @@ export default function AutomationsPage() {
             {automations.map((automation) => {
               const triggerText = buildTriggerDescription(automation);
               const actionText = buildActionDescription(automation);
+              const autoId = (automation as any).Id ?? (automation as any).id ?? "";
+              const autoName = (automation as any).Name ?? (automation as any).name ?? "";
+              const autoIsEnabled = (automation as any).IsEnabled ?? (automation as any).isEnabled ?? false;
+              const autoHomeId = (automation as any).HomeId ?? (automation as any).homeId ?? "";
 
               return (
                 <div
-                  key={automation.id}
+                  key={String(autoId || autoName)}
                   className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow"
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
                         <h3 className="text-lg font-semibold text-gray-900">
-                          {automation.name}
+                          {autoName}
                         </h3>
-                        {automation.isEnabled ? (
+                        {autoIsEnabled ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
                             <Power className="w-3 h-3 mr-1" />
                             Enabled
@@ -513,33 +484,21 @@ export default function AutomationsPage() {
                       </div>
                       <div className="flex items-center text-sm text-gray-500 mb-3">
                         <Building2 className="w-4 h-4 mr-1" />
-                        {getHomeName(automation.homeId)}
+                        {getHomeName(autoHomeId)}
                       </div>
 
                     </div>
                     <div className="flex space-x-2 ml-2">
                       <button
-                        onClick={() => {
+                          onClick={() => {
                           console.log(
                             "[AutomationsPage] Edit clicked for automation:",
                             automation
                           );
-                          console.log(
-                            "[AutomationsPage] Automation ID:",
-                            automation.id,
-                            "type:",
-                            typeof automation.id
-                          );
-                          if (
-                            !automation.id ||
-                            automation.id === "Unknown" ||
-                            (typeof automation.id === "string" &&
-                              automation.id.trim() === "")
-                          ) {
-                            console.error(
-                              "[AutomationsPage] Cannot edit: Invalid automation ID:",
-                              automation.id
-                            );
+                          const checkId = (automation as any).Id ?? (automation as any).id;
+                          console.log("[AutomationsPage] Automation ID:", checkId, "type:", typeof checkId);
+                          if (!checkId || checkId === "Unknown" || (typeof checkId === "string" && checkId.trim() === "")) {
+                            console.error("[AutomationsPage] Cannot edit: Invalid automation ID:", checkId);
                             setError("Invalid Automation ID. Cannot edit.");
                             return;
                           }
@@ -551,7 +510,7 @@ export default function AutomationsPage() {
                         <Edit className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleDeleteAutomation(automation.id)}
+                        onClick={() => handleDeleteAutomation(Number((automation as any).Id ?? (automation as any).id ?? 0))}
                         className="text-red-600 hover:text-red-800 p-1 hover:bg-red-50 rounded"
                         title="Delete automation"
                       >
@@ -605,24 +564,14 @@ export default function AutomationsPage() {
                 "[AutomationsPage] EditAutomationForm onSubmit - editingAutomation:",
                 editingAutomation
               );
-              console.log(
-                "[AutomationsPage] EditAutomationForm onSubmit - automation.id:",
-                editingAutomation.id
-              );
-              if (
-                !editingAutomation.id ||
-                editingAutomation.id === "Unknown" ||
-                (typeof editingAutomation.id === "string" &&
-                  editingAutomation.id.trim() === "")
-              ) {
-                console.error(
-                  "[AutomationsPage] EditAutomationForm onSubmit - Invalid automation ID:",
-                  editingAutomation.id
-                );
+              const editingId = Number((editingAutomation as any).Id ?? (editingAutomation as any).id ?? 0);
+              console.log("[AutomationsPage] EditAutomationForm onSubmit - automation.Id:", editingId);
+              if (!editingId || Number.isNaN(editingId) || editingId <= 0) {
+                console.error("[AutomationsPage] EditAutomationForm onSubmit - Invalid automation ID:", editingId);
                 setError("Invalid Automation ID. Cannot update.");
                 return;
               }
-              handleUpdateAutomation(editingAutomation.id, data);
+              handleUpdateAutomation(editingId, data);
             }}
             onCancel={() => setEditingAutomation(null)}
           />
@@ -882,21 +831,8 @@ function EditAutomationForm({
   onCancel: () => void;
 }) {
   const [formData, setFormData] = useState({
-    name: automation.name,
-    isEnabled: automation.isEnabled,
-    homeId: automation.homeId,
-    triggerType: automation.triggerType || "DeviceState",
-    triggerDeviceId:
-      automation.triggerDeviceId != null
-        ? String(automation.triggerDeviceId)
-        : "",
-    triggerCondition: automation.triggerCondition || ">",
-    triggerValue:
-      automation.triggerValue != null ? String(automation.triggerValue) : "",
-    triggerTimeStart: automation.triggerTimeStart || "",
-    triggerTimeEnd: automation.triggerTimeEnd || "",
-    actionDeviceId: String(automation.actionDeviceId || ""),
-    actionValue: String(automation.actionValue ?? "1"),
+    Name: automation.Name,
+    IsEnabled: automation.IsEnabled,
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -916,178 +852,38 @@ function EditAutomationForm({
               </label>
               <input
                 type="text"
-                value={formData.name}
+                value={formData.Name}
                 onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
+                  setFormData({ ...formData, Name: e.target.value })
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
               />
             </div>
-            <HomeSelector
-              homes={homes}
-              value={formData.homeId}
-              onChange={(homeId) => setFormData({ ...formData, homeId })}
-              required
-            />
-          </div>
-
-          {/* Trigger configuration */}
-          <div className="grid grid-cols-3 gap-4 border-t pt-4 mt-2">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Trigger Type
-              </label>
-              <select
-                value={formData.triggerType}
-                onChange={(e) =>
-                  setFormData({ ...formData, triggerType: e.target.value })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              >
-                <option value="DeviceState">DeviceState</option>
-                <option value="Time">Time</option>
-              </select>
-            </div>
-
-            {formData.triggerType === "DeviceState" && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Trigger Device Id
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.triggerDeviceId}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        triggerDeviceId: e.target.value,
-                      })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Condition / Value
-                  </label>
-                  <div className="flex gap-2">
-                    <select
-                      value={formData.triggerCondition}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          triggerCondition: e.target.value,
-                        })
-                      }
-                      className="w-20 px-2 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                    >
-                      <option value=">">{">"}</option>
-                      <option value="<">{"<"}</option>
-                      <option value="=">{"="}</option>
-                      <option value=">=">{">="}</option>
-                    </select>
-                    <input
-                      type="number"
-                      value={formData.triggerValue}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          triggerValue: e.target.value,
-                        })
-                      }
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-
-            {formData.triggerType === "Time" && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Time Start
-                  </label>
-                  <input
-                    type="time"
-                    value={formData.triggerTimeStart}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        triggerTimeStart: e.target.value,
-                      })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Time End
-                  </label>
-                  <input
-                    type="time"
-                    value={formData.triggerTimeEnd}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        triggerTimeEnd: e.target.value,
-                      })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Action & status */}
-          <div className="grid grid-cols-3 gap-4 mt-4">
             <div className="flex items-center">
               <input
                 type="checkbox"
-                id="isActiveEdit"
-                checked={formData.isEnabled}
+                id="isEnabledEdit"
+                checked={formData.IsEnabled}
                 onChange={(e) =>
-                  setFormData({ ...formData, isEnabled: e.target.checked })
+                  setFormData({ ...formData, IsEnabled: e.target.checked })
                 }
                 className="mr-2"
               />
               <label
-                htmlFor="isActiveEdit"
+                htmlFor="isEnabledEdit"
                 className="text-sm font-medium text-gray-700"
               >
-                Active
+                Enabled
               </label>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Action Device Id
-              </label>
-              <input
-                type="number"
-                value={formData.actionDeviceId}
-                onChange={(e) =>
-                  setFormData({ ...formData, actionDeviceId: e.target.value })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Action Value
-              </label>
-              <input
-                type="number"
-                value={formData.actionValue}
-                onChange={(e) =>
-                  setFormData({ ...formData, actionValue: e.target.value })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
             </div>
           </div>
+
+          <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-md">
+            Note: According to the new API specification, only the automation name and enabled status can be updated.
+            Other properties (triggers, actions) cannot be modified after creation.
+          </div>
+
 
           <div className="flex space-x-3 pt-4 border-t">
             <button

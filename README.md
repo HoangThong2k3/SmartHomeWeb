@@ -44,6 +44,14 @@ A comprehensive admin dashboard for managing smart home devices, users, and auto
 - Define triggers and actions
 - Enable/disable automations
 - Automation scheduling
+- Privacy Wall protection
+
+### 🎭 Scene Management
+
+- Create and manage smart home scenes
+- Group multiple device actions
+- Execute scenes instantly
+- Scene scheduling and automation
 
 ### 📊 Sensor Data Monitoring
 
@@ -151,25 +159,41 @@ The application expects a REST API with the following endpoints:
 
 #### Devices Management
 
-- `GET /api/devices/{id}` - Get device by ID
-- `GET /api/devices/room/{roomId}` - Get devices by room
-- `POST /api/devices` - Create new device
-- `PUT /api/devices/{id}` - Update device
-- `DELETE /api/devices/{id}` - Delete device
+- `GET /api/Devices/{id}` - Get device by ID (returns DeviceId, RoomId, Name, DeviceType, CurrentState)
+- `GET /api/Devices/room/{roomId}` - Get devices by room
+- `POST /api/Devices` - Create new device (Admin only) - requires RoomId, Name, DeviceType, CurrentState
+- `PUT /api/Devices/{id}` - Update device name only (Admin: full update, Customer: name only)
+- `DELETE /api/Devices/{id}` - Delete device (Admin only)
+- `POST /api/Devices/{id}/control` - Control device (send Action and Value)
 
 #### Automations Management
 
-- `GET /api/automations/home/{homeId}` - Get automations by home
-- `POST /api/automations` - Create new automation
-- `PUT /api/automations/{id}` - Update automation
-- `DELETE /api/automations/{id}` - Delete automation
+- `GET /api/Automations/home/{homeId}` - Get automations by home (Customer only, Privacy Wall)
+- `GET /api/Automations/{id}` - Get automation by ID
+- `POST /api/Automations` - Create new automation (Customer only)
+- `PUT /api/Automations/{id}` - Update automation name and enabled status only (Customer only)
+- `DELETE /api/Automations/{id}` - Delete automation (Customer only)
+- `PATCH /api/Automations/{id}/toggle` - Toggle automation enabled/disabled (Customer only)
+
+#### Scenes Management
+
+- `GET /api/Scenes/home/{homeId}` - Get scenes by home (Customer only, Privacy Wall)
+- `POST /api/Scenes` - Create new scene (Customer only) - requires HomeId, Name, Description, Actions array
+- `POST /api/Scenes/{id}/execute` - Execute scene (run all actions)
+- `DELETE /api/Scenes/{id}` - Delete scene (Customer only)
 
 #### Sensor Data Management
 
-- `POST /api/sensordata` - Create sensor data (Admin only)
-- `GET /api/sensordata/{id}` - Get sensor data by ID
-- `GET /api/sensordata/device/{deviceId}/latest` - Get latest sensor data
-- `GET /api/sensordata/device/{deviceId}` - Get sensor data with pagination
+- `POST /api/SensorData` - Create sensor data (Admin only) - requires DeviceId, Value, TimeStamp?
+- `GET /api/SensorData/{id}` - Get sensor data by ID (Customer only, Privacy Wall)
+- `GET /api/SensorData/device/{deviceId}/latest` - Get latest sensor data (Customer only)
+- `GET /api/SensorData/device/{deviceId}` - Query sensor data with time range & pagination (Customer only)
+
+#### Device Mappings (Provisioning)
+
+- `POST /api/admin/mappings` - Create device mapping
+- `GET /api/admin/mappings` - Get all device mappings (Admin only)
+- `DELETE /api/admin/mappings/{id}` - Delete device mapping (Admin only)
 
 #### Health Check
 
@@ -188,6 +212,7 @@ src/
 │   ├── rooms/             # Room management
 │   ├── devices/           # Device management
 │   ├── automations/       # Automation management
+│   ├── scenes/            # Scene management
 │   ├── sensor-data/       # Sensor data monitoring
 │   ├── health/            # System health
 │   └── settings/          # Settings
@@ -229,6 +254,14 @@ src/
 - Action configuration
 - Status management
 - Scheduling support
+- Privacy Wall protection
+
+### Scene Management
+
+- Scene creation and management
+- Multiple device action grouping
+- Instant scene execution
+- Scene automation integration
 
 ### Sensor Data
 

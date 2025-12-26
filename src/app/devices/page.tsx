@@ -20,6 +20,31 @@ import {
   WifiOff,
 } from "lucide-react";
 
+  // Helper to summarize device current state / JSON value into readable short text
+  const summarizeState = (raw: any) => {
+    const s = raw ?? "";
+    if (typeof s === "string") {
+      try {
+        const parsed = JSON.parse(s);
+        if (parsed && typeof parsed === "object") {
+          const temp = parsed.temperature ?? parsed.temp ?? parsed.value;
+          const hum = parsed.humidity ?? parsed.hum;
+          const status = parsed.status ?? parsed.state ?? null;
+          const parts: string[] = [];
+          if (status) parts.push(status.toString());
+          if (typeof temp === "number" || typeof temp === "string") parts.push(`T:${temp}`);
+          if (typeof hum === "number" || typeof hum === "string") parts.push(`H:${hum}`);
+          if (parts.length > 0) return parts.join(" • ");
+          return JSON.stringify(parsed);
+        }
+      } catch {
+        // not JSON
+      }
+      return s.length > 40 ? s.slice(0, 36) + "..." : s;
+    }
+    return String(s);
+  };
+
 export default function DevicesPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -98,7 +123,7 @@ export default function DevicesPage() {
       const allDevices: Device[] = [];
       for (const room of allRooms) {
         try {
-          const roomDevices = await apiService.getDevicesByRoom(room.id);
+          const roomDevices = await apiService.getDevicesByRoom(Number(room.id));
           allDevices.push(...roomDevices);
           console.log(
             `[DevicesPage] Found ${roomDevices.length} devices for room ${room.id}`
@@ -131,10 +156,6 @@ export default function DevicesPage() {
     try {
       setError(null);
       console.log("[DevicesPage] Creating device with data:", deviceData);
-      console.log(
-        "[DevicesPage] Available rooms:",
-        rooms.map((r) => ({ id: r.id, name: r.name, homeId: r.homeId }))
-      );
 
       // Validate bắt buộc
       if (!deviceData.roomId || !`${deviceData.roomId}`.trim()) {
@@ -163,19 +184,13 @@ export default function DevicesPage() {
       }
       console.log("[DevicesPage] Selected room:", selectedRoom);
 
-      // Gán đúng schema BE - KHÔNG gửi currentState để tránh backend 500 nếu không hỗ trợ
-      const payload: any = {
-        roomId: deviceData.roomId, // Keep as string, apiService will convert to number
-        name: deviceData.name,
-        deviceType: (deviceData.deviceType || "").toUpperCase(),
+      const payload = {
+        RoomId: Number(deviceData.roomId),
+        Name: deviceData.name,
+        DeviceType: (deviceData.deviceType || "").toUpperCase(),
+        CurrentState: deviceData.currentState || "OFF",
       };
       console.log("[DevicesPage] Device payload:", payload);
-      console.log(
-        "[DevicesPage] RoomId type:",
-        typeof payload.roomId,
-        "value:",
-        payload.roomId
-      );
 
       const newDevice = await apiService.createDevice(payload);
       console.log("[DevicesPage] Device created successfully:", newDevice);
@@ -223,56 +238,30 @@ export default function DevicesPage() {
     }
   };
 
-  const handleUpdateDevice = async (id: string, deviceData: any) => {
+  const handleUpdateDevice = async (deviceId: number, deviceData: any) => {
     try {
       setError(null);
-      console.log("[DevicesPage] Updating device:", id, deviceData);
-      console.log(
-        "[DevicesPage] Available rooms:",
-        rooms.map((r) => ({ id: r.id, name: r.name, homeId: r.homeId }))
-      );
+      console.log("[DevicesPage] Updating device:", deviceId, deviceData);
 
-      if (!id || id === "Unknown") {
+      if (!deviceId || deviceId <= 0) {
         const errorMsg = "Invalid Device ID. Cannot update.";
         setError(errorMsg);
         return;
       }
-      if (!deviceData.name || !deviceData.deviceType || !deviceData.roomId) {
-        const errorMsg = "Name, DeviceType, RoomId bắt buộc";
+      if (!deviceData.Name) {
+        const errorMsg = "Name is required for update";
         setError(errorMsg);
         return;
       }
 
-      // Validate roomId exists in rooms list
-      const selectedRoom = rooms.find((r) => r.id === deviceData.roomId);
-      if (!selectedRoom) {
-        console.error(
-          "[DevicesPage] Selected roomId not found in rooms list:",
-          deviceData.roomId
-        );
-        throw new Error(
-          `Invalid room selected. Room ID ${deviceData.roomId} not found.`
-        );
-      }
-      console.log("[DevicesPage] Selected room:", selectedRoom);
-
       const payload = {
-        name: deviceData.name,
-        deviceType: (deviceData.deviceType || "").toUpperCase(),
-        roomId: deviceData.roomId, // Keep as string, apiService will convert to number
-        currentState: deviceData.currentState ?? undefined,
+        Name: deviceData.Name,
       };
       console.log("[DevicesPage] Update payload:", payload);
-      console.log(
-        "[DevicesPage] RoomId type:",
-        typeof payload.roomId,
-        "value:",
-        payload.roomId
-      );
 
-      await apiService.updateDevice(id, payload);
+      await apiService.updateDevice(deviceId, payload);
       console.log("[DevicesPage] Device updated successfully");
-      fetchData(); // Chỉnh về fetch lại data chuẩn
+      fetchData(); // Refresh data
       setEditingDevice(null);
     } catch (err: any) {
       const errorMsg =
@@ -282,7 +271,7 @@ export default function DevicesPage() {
     }
   };
 
-  const handleDeleteDevice = async (id: string) => {
+  const handleDeleteDevice = async (deviceId: number) => {
     if (!isAdmin) {
       setError("Chỉ quản trị viên mới có thể xóa thiết bị.");
       setTimeout(() => setError(null), 4000);
@@ -291,14 +280,14 @@ export default function DevicesPage() {
     if (!confirm("Are you sure you want to delete this device?")) return;
     try {
       setError(null);
-      console.log("[DevicesPage] Deleting device:", id);
+      console.log("[DevicesPage] Deleting device:", deviceId);
 
-      if (!id || id === "Unknown") {
+      if (!deviceId || deviceId <= 0) {
         const errorMsg = "Invalid Device ID. Cannot delete.";
         setError(errorMsg);
         return;
       }
-      await apiService.deleteDevice(id);
+      await apiService.deleteDevice(deviceId);
       console.log("[DevicesPage] Device deleted successfully");
       fetchData();
     } catch (err: any) {
@@ -416,30 +405,29 @@ export default function DevicesPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {devices.map((device) => (
               <div
-                key={device.id}
+                key={device.DeviceId}
                 className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center mb-2">
                       <span className="text-2xl mr-3">
-                        {getDeviceIcon(
-                          device.type || (device as any).deviceType || ""
-                        )}
+                        {getDeviceIcon(device.DeviceType)}
                       </span>
                       <h3 className="text-lg font-semibold text-gray-900">
-                        {device.name}
+                        {device.Name}
                       </h3>
                     </div>
                     <div className="flex items-center text-sm text-gray-500 mb-2">
                       <DoorOpen className="w-4 h-4 mr-1" />
-                      {getRoomName(device.roomId)}
+                      Room #{device.RoomId}
                     </div>
                     <div className="flex items-center space-x-4">
                       <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
-                        {formatDeviceTypeForDisplay(
-                          device.type || (device as any).deviceType || ""
-                        )}
+                        {formatDeviceTypeForDisplay(device.DeviceType)}
+                      </span>
+                      <span className="inline-block bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full max-w-xs truncate">
+                        {summarizeState(device.CurrentState)}
                       </span>
                     </div>
                   </div>
@@ -472,7 +460,7 @@ export default function DevicesPage() {
                           <Edit className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => handleDeleteDevice(device.id)}
+                          onClick={() => handleDeleteDevice(device.DeviceId)}
                           className="text-red-600 hover:text-red-800"
                           title="Remove device"
                         >
@@ -502,7 +490,7 @@ export default function DevicesPage() {
             rooms={rooms}
             homes={homes}
             mode={editMode}
-            onSubmit={(data) => handleUpdateDevice(editingDevice.id, data)}
+            onSubmit={(data) => handleUpdateDevice(Number(editingDevice.DeviceId || editingDevice.DeviceId), data)}
             onCancel={() => setEditingDevice(null)}
           />
         )}
@@ -528,22 +516,18 @@ function CreateDeviceForm({
     deviceType: "LED",
     roomId: "",
     homeId: "",
-    currentState: "",
+    currentState: "OFF",
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // always send as UPPERCASE
-    // Only include currentState if it has a value
-    const submitData: any = {
+    // According to new API specification
+    const submitData = {
+      roomId: formData.roomId,
       name: formData.name,
       deviceType: (formData.deviceType || "").toUpperCase(),
-      roomId: formData.roomId,
+      currentState: formData.currentState || "OFF",
     };
-    // Only add currentState if it's not empty
-    if (formData.currentState && formData.currentState.trim() !== "") {
-      submitData.currentState = formData.currentState.trim();
-    }
     onSubmit(submitData);
   };
 
@@ -708,17 +692,18 @@ function EditDeviceForm({
     "";
 
   const [formData, setFormData] = useState({
-    name: device.name,
-    deviceType:
-      (device as any).deviceType || convertTypeToDeviceType(device.type),
-    roomId: device.roomId,
-    homeId: findHomeIdFromRoom(device.roomId),
-    currentState: deriveCurrentState(),
+    Name: device.Name,
+    currentState: device.CurrentState,
+    homeId: findHomeIdFromRoom(String(device.RoomId || "")),
+    roomId: String(device.RoomId || ""),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(formData);
+    // According to new API specification, only Name can be updated
+    onSubmit({
+      Name: formData.Name,
+    });
   };
 
   const renderHomeSelector = () => {
@@ -763,59 +748,31 @@ function EditDeviceForm({
             </label>
             <input
               type="text"
-              value={formData.name}
+              value={formData.Name}
               onChange={(e) =>
-                setFormData({ ...formData, name: e.target.value })
+                setFormData({ ...formData, Name: e.target.value })
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
-              disabled={!isAdminMode}
             />
           </div>
-          {renderHomeSelector()}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Room
+              Current State (Read-only)
             </label>
-            <select
-              value={formData.roomId}
-              onChange={(e) =>
-                setFormData({ ...formData, roomId: e.target.value })
-              }
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-              required
-              disabled={!formData.homeId || !isAdminMode}
-            >
-              {rooms
-                .filter((room) => room.homeId === formData.homeId)
-                .map((room) => (
-                  <option key={room.id} value={room.id}>
-                    {room.name} ({room.type})
-                  </option>
-                ))}
-            </select>
+            <input
+              type="text"
+              value={formData.currentState}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500"
+              readOnly
+            />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Device Type
-            </label>
-            <select
-              value={formData.deviceType}
-              onChange={(e) =>
-                setFormData({ ...formData, deviceType: e.target.value })
-              }
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-              disabled={!isAdminMode}
-            >
-              <option value="SERVO">Servo</option>
-              <option value="LED">LED</option>
-              <option value="BUZZER">Buzzer</option>
-              <option value="PIR">PIR</option>
-              <option value="DHT">DHT</option>
-              <option value="MQ2">MQ2</option>
-              <option value="MQ135">MQ135</option>
-            </select>
-          </div>
+          {isAdminMode && (
+            <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-md">
+              Note: According to the new API specification, only the device name can be updated.
+              Device type, room, and current state are managed through dedicated endpoints.
+            </div>
+          )}
           <div className="flex space-x-3 pt-4">
             <button
               type="submit"

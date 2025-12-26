@@ -71,10 +71,12 @@ export default function RoomsPage() {
       await Promise.all(
         allRooms.map(async (r) => {
           try {
-            const devices = await apiService.getDevicesByRoom(r.id);
+            const devices = await apiService.getDevicesByRoom(Number(r.id));
             const total = devices.length;
-            const online = devices.filter(
-              (d) => (d as Device).status === "online"
+            const online = devices.filter((d: any) =>
+              String((d as any).status ?? (d as any).CurrentState ?? (d as any).currentState ?? "")
+                .toLowerCase()
+                .includes("online")
             ).length;
             stats[r.id] = { total, online };
           } catch (err) {

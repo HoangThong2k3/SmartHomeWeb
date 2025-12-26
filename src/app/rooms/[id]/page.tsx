@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import Layout from "@/components/layout/Layout";
@@ -20,6 +20,7 @@ import {
   LightbulbOff,
   Eye,
 } from "lucide-react";
+import { Cpu } from "lucide-react";
 
 export default function RoomDetailPage() {
   const params = useParams();
@@ -29,11 +30,47 @@ export default function RoomDetailPage() {
 
   const [room, setRoom] = useState<Room | null>(null);
   const [home, setHome] = useState<Home | null>(null);
-  const [devices, setDevices] = useState<Device[]>([]);
+  const [devices, setDevices] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingRoomName, setEditingRoomName] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
+  // UI state for expanded device details and latest sensor data cache
+  const [expandedDeviceIds, setExpandedDeviceIds] = useState<string[]>([]);
+  const [latestDataByDevice, setLatestDataByDevice] = useState<Record<string, any>>({});
+  const [latestLoadingIds, setLatestLoadingIds] = useState<string[]>([]);
+
+  const toggleDeviceDetails = useCallback(
+    async (device: any) => {
+      const id = String(device.DeviceId ?? device.id ?? device.Id ?? "");
+      if (!id) return;
+      const isExpanded = expandedDeviceIds.includes(id);
+      if (isExpanded) {
+        setExpandedDeviceIds((prev) => prev.filter((p) => p !== id));
+        return;
+      }
+
+      // expand and fetch latest sensor data
+      setExpandedDeviceIds((prev) => [...prev, id]);
+      if (latestDataByDevice[id]) return; // already cached
+      setLatestLoadingIds((prev) => [...prev, id]);
+      try {
+        const numericId = Number(device.DeviceId ?? device.id ?? device.Id);
+        if (!isNaN(numericId) && numericId > 0) {
+          const latest = await apiService.getLatestSensorData(numericId);
+          setLatestDataByDevice((prev) => ({ ...prev, [id]: latest }));
+        } else {
+          setLatestDataByDevice((prev) => ({ ...prev, [id]: null }));
+        }
+      } catch (e) {
+        console.error("Failed to load latest sensor data for device", id, e);
+        setLatestDataByDevice((prev) => ({ ...prev, [id]: null }));
+      } finally {
+        setLatestLoadingIds((prev) => prev.filter((p) => p !== id));
+      }
+    },
+    [expandedDeviceIds, latestDataByDevice]
+  );
 
   useEffect(() => {
     fetchRoomData();
@@ -58,9 +95,24 @@ export default function RoomDetailPage() {
         }
       }
 
-      // Fetch devices
-      const roomDevices = await apiService.getDevicesByRoom(roomId);
-      setDevices(roomDevices);
+      // Fetch devices: prefer Devices embedded in Room response when available,
+      // otherwise fall back to getDevicesByRoom.
+      let rawRoomDevices = (roomData as any).Devices ?? (roomData as any).devices ?? null;
+      if (!rawRoomDevices) {
+        rawRoomDevices = await apiService.getDevicesByRoom(Number(roomId));
+      }
+      const normalizedDevices = (rawRoomDevices || []).map((d: any) => ({
+        id: d?.id ?? d?.Id ?? d?.DeviceId ?? d?.deviceId ?? "",
+        name: d?.name ?? d?.Name ?? "",
+        type: (d?.type ?? d?.Type ?? d?.DeviceType ?? d?.deviceType ?? "").toString(),
+        status:
+          d?.status ??
+          d?.Status ??
+          (d?.currentState ?? d?.CurrentState ? "online" : "offline"),
+        currentState: d?.currentState ?? d?.CurrentState ?? "",
+        roomId: d?.roomId ?? d?.RoomId ?? "",
+      }));
+      setDevices(normalizedDevices);
     } catch (err: any) {
       setError(err.message || "Không thể tải thông tin phòng");
       console.error("Error fetching room data:", err);
@@ -87,9 +139,8 @@ export default function RoomDetailPage() {
       // TODO: Gọi API để điều khiển thiết bị
       // await apiService.controlDevice(deviceId, action);
       alert(`Đã ${action === "on" ? "bật" : "tắt"} thiết bị`);
-      // Refresh devices
-      const updatedDevices = await apiService.getDevicesByRoom(roomId);
-      setDevices(updatedDevices);
+      // Refresh room data (will use embedded Devices if available)
+      await fetchRoomData();
     } catch (err: any) {
       alert("Không thể điều khiển thiết bị. Vui lòng thử lại.");
       console.error("Error controlling device:", err);
@@ -98,9 +149,9 @@ export default function RoomDetailPage() {
 
   // Lấy dữ liệu cảm biến (mock - cần tích hợp API thực tế)
   const getSensorData = () => {
-    const dhtDevice = devices.find((d) => d.type === "dht");
-    const pirDevice = devices.find((d) => d.type === "pir");
-    const mq2Device = devices.find((d) => d.type === "mq2");
+    const dhtDevice = devices.find((d: any) => (d.type || "").toLowerCase() === "dht");
+    const pirDevice = devices.find((d: any) => (d.type || "").toLowerCase() === "pir");
+    const mq2Device = devices.find((d: any) => (d.type || "").toLowerCase() === "mq2");
 
     return {
       temperature: dhtDevice ? "28°C" : "N/A",
@@ -116,9 +167,33 @@ export default function RoomDetailPage() {
 
   // Lấy thiết bị điều khiển
   const getControlDevices = () => {
-    return devices.filter((d) =>
-      ["servo", "led"].includes(d.type.toLowerCase())
+    return devices.filter((d: any) =>
+      ["servo", "led"].includes((d.type || "").toLowerCase())
     );
+  };
+
+  const summarizeState = (raw: any) => {
+    const s = raw ?? "";
+    if (typeof s === "string") {
+      try {
+        const parsed = JSON.parse(s);
+        if (parsed && typeof parsed === "object") {
+          const temp = parsed.temperature ?? parsed.temp ?? parsed.value;
+          const hum = parsed.humidity ?? parsed.hum;
+          const status = parsed.status ?? parsed.state ?? null;
+          const parts: string[] = [];
+          if (status) parts.push(status.toString());
+          if (typeof temp === "number" || typeof temp === "string") parts.push(`T:${temp}`);
+          if (typeof hum === "number" || typeof hum === "string") parts.push(`H:${hum}`);
+          if (parts.length > 0) return parts.join(" • ");
+          return JSON.stringify(parsed);
+        }
+      } catch {
+        // not JSON
+      }
+      return s.length > 40 ? s.slice(0, 36) + "..." : s;
+    }
+    return String(s);
   };
 
   const sensorData = getSensorData();
@@ -308,6 +383,83 @@ export default function RoomDetailPage() {
               </div>
             </div>
 
+            {/* Thiết bị trong phòng (danh sách đầy đủ, chi tiết bật/tắt) */}
+            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Thiết bị trong phòng</h2>
+              {devices.length === 0 ? (
+                <p className="text-sm text-gray-500">Chưa có thiết bị trong phòng này.</p>
+              ) : (
+                <div className="space-y-3">
+                  {devices.map((device) => {
+                    const id = String(device.id ?? device.DeviceId ?? device.Id ?? "");
+                    const isExpanded = expandedDeviceIds.includes(id);
+                    const latest = latestDataByDevice[id];
+                    const loadingLatest = latestLoadingIds.includes(id);
+                    const devType = String(device.type || device.DeviceType || "").replace("_", " ");
+                    const isOnline = String(device.status || device.currentState || "").toLowerCase() === "online";
+                    return (
+                      <div key={id || device.name} className="border rounded-lg p-4 bg-white shadow-sm">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start gap-4">
+                            <div className={`h-10 w-10 rounded-md flex items-center justify-center ${isOnline ? "bg-emerald-50" : "bg-gray-50"}`}>
+                              <Cpu className={`w-5 h-5 ${isOnline ? "text-emerald-600" : "text-gray-500"}`} />
+                            </div>
+                            <div>
+                              <div className="flex items-center space-x-2">
+                                <h3 className="font-semibold text-gray-900">{device.name || device.Name || `Device ${id}`}</h3>
+                                <span className="text-xs text-gray-500">#{id}</span>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-1">{devType || "Device"}</p>
+                              {device.currentState && <p className="text-[11px] text-gray-500 mt-1">{summarizeState(device.currentState)}</p>}
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => toggleDeviceDetails(device)}
+                              className="px-3 py-1 rounded-md text-sm bg-gray-100 hover:bg-gray-200"
+                            >
+                              {isExpanded ? "Ẩn chi tiết" : "Xem chi tiết"}
+                            </button>
+                            <button
+                              onClick={() => router.push(`/devices/${id}`)}
+                              className="px-3 py-1 rounded-md text-sm text-blue-600 hover:underline"
+                            >
+                              Mở
+                            </button>
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="mt-3 border-t pt-3">
+                            {loadingLatest ? (
+                              <p className="text-sm text-gray-500">Đang tải dữ liệu cảm biến mới nhất...</p>
+                            ) : latest ? (
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div className="p-3 bg-gray-50 rounded">
+                                  <p className="text-xs text-gray-500">Sensor Id</p>
+                                  <p className="font-semibold">{latest.Id ?? latest.id}</p>
+                                </div>
+                                <div className="p-3 bg-gray-50 rounded">
+                                  <p className="text-xs text-gray-500">Value</p>
+                                  <p className="font-semibold">{String(latest.Value ?? latest.value ?? "—")}</p>
+                                </div>
+                                <div className="p-3 bg-gray-50 rounded">
+                                  <p className="text-xs text-gray-500">Timestamp</p>
+                                  <p className="font-semibold">{latest.TimeStamp ?? latest.timeStamp ?? "—"}</p>
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-sm text-gray-500">Không có dữ liệu cảm biến mới nhất.</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             {/* Danh sách thiết bị điều khiển */}
             <div className="bg-white rounded-lg shadow-md p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
@@ -319,56 +471,54 @@ export default function RoomDetailPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {controlDevices.map((device) => {
-                    const isOn = device.status === "online";
-                    const isServo = device.type.toLowerCase() === "servo";
-                    const isLed = device.type.toLowerCase() === "led";
+                    {controlDevices.map((device: any) => {
+                    const isOn = (device.status || "").toLowerCase() === "online";
+                    const isServo = (device.type || "").toLowerCase() === "servo";
+                    const isLed = (device.type || "").toLowerCase() === "led";
+                    const id = device.id || device.DeviceId || device.Id;
 
                     return (
                       <div
-                        key={device.id}
-                        className="border-2 border-gray-200 rounded-lg p-4 hover:border-blue-400 transition-colors"
+                        key={id || device.name}
+                        className="border-2 border-gray-100 rounded-lg p-4 hover:shadow-lg transition-shadow bg-white"
                       >
                         <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-gray-900 mb-1">
-                              {device.name}
-                            </h3>
-                            <p className="text-sm text-gray-500 capitalize">
-                              {device.type.replace("_", " ")}
-                            </p>
-                            <div className="mt-2">
-                              <span
-                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                  isOn
-                                    ? "bg-green-100 text-green-800"
-                                    : "bg-gray-100 text-gray-800"
-                                }`}
-                              >
-                                {isOn ? "Đang hoạt động" : "Đã tắt"}
-                              </span>
+                          <div className="flex items-start gap-4">
+                            <div className={`h-12 w-12 rounded-lg flex items-center justify-center ${isOn ? "bg-green-50" : "bg-gray-50"}`}>
+                              <Cpu className={`w-6 h-6 ${isOn ? "text-emerald-600" : "text-gray-500"}`} />
+                            </div>
+                            <div>
+                              <h3 className="font-semibold text-gray-900 mb-1">
+                                {device.name || device.Name}
+                              </h3>
+                              <p className="text-sm text-gray-500 capitalize">
+                                {(device.type || device.DeviceType || "").replace("_", " ")}
+                              </p>
+                              <div className="mt-2">
+                                <span
+                                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                    isOn ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
+                                  }`}
+                                >
+                                  {summarizeState(device.status || device.currentState || device.CurrentState || "N/A")}
+                                </span>
+                              </div>
                             </div>
                           </div>
                           <div className="flex items-center space-x-2">
                             {isServo && (
                               <>
                                 <button
-                                  onClick={() => handleDeviceControl(device.id, "open")}
-                                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                                    isOn
-                                      ? "bg-green-600 text-white hover:bg-green-700"
-                                      : "bg-gray-300 text-gray-700"
-                                  }`}
+                                  onClick={() => handleDeviceControl(id, "open")}
+                                  className={`p-2 rounded-md transition-colors ${isOn ? "bg-green-600 text-white" : "bg-gray-200 text-gray-700"}`}
+                                  title="Open"
                                 >
                                   <DoorOpen className="h-5 w-5" />
                                 </button>
                                 <button
-                                  onClick={() => handleDeviceControl(device.id, "close")}
-                                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                                    !isOn
-                                      ? "bg-red-600 text-white hover:bg-red-700"
-                                      : "bg-gray-300 text-gray-700"
-                                  }`}
+                                  onClick={() => handleDeviceControl(id, "close")}
+                                  className={`p-2 rounded-md transition-colors ${!isOn ? "bg-red-600 text-white" : "bg-gray-200 text-gray-700"}`}
+                                  title="Close"
                                 >
                                   <DoorClosed className="h-5 w-5" />
                                 </button>
@@ -377,13 +527,9 @@ export default function RoomDetailPage() {
                             {isLed && (
                               <button
                                 onClick={() =>
-                                  handleDeviceControl(device.id, isOn ? "off" : "on")
+                                  handleDeviceControl(id, isOn ? "off" : "on")
                                 }
-                                className={`px-6 py-2 rounded-lg font-medium transition-colors flex items-center space-x-2 ${
-                                  isOn
-                                    ? "bg-yellow-500 text-white hover:bg-yellow-600"
-                                    : "bg-gray-300 text-gray-700 hover:bg-gray-400"
-                                }`}
+                                className={`px-4 py-2 rounded-md font-medium transition-colors flex items-center space-x-2 ${isOn ? "bg-yellow-500 text-white" : "bg-gray-200 text-gray-800 hover:bg-gray-300"}`}
                               >
                                 {isOn ? (
                                   <>

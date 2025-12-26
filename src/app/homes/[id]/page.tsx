@@ -16,6 +16,7 @@ import {
   Clock,
   DoorOpen,
   Cpu,
+  Power,
 } from "lucide-react";
 
 export default function HomeDetailPage() {
@@ -25,7 +26,7 @@ export default function HomeDetailPage() {
 
   const [home, setHome] = useState<HomeProfile | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [devicesByRoom, setDevicesByRoom] = useState<Record<string, Device[]>>(
+  const [devicesByRoom, setDevicesByRoom] = useState<Record<string, any[]>>(
     {}
   );
   const [isLoading, setIsLoading] = useState(true);
@@ -46,7 +47,7 @@ export default function HomeDetailPage() {
         await Promise.all(
           (roomsRes || []).map(async (room) => {
             try {
-              devicesMap[room.id] = await apiService.getDevicesByRoom(room.id);
+              devicesMap[room.id] = await apiService.getDevicesByRoom(Number(room.id));
             } catch (err) {
               console.error("Failed to load devices for room", room.id, err);
               devicesMap[room.id] = [];
@@ -66,6 +67,32 @@ export default function HomeDetailPage() {
 
     fetchData();
   }, [homeId]);
+
+  const summarizeState = (raw: any) => {
+    const s = raw ?? "";
+    if (typeof s === "string") {
+      try {
+        const parsed = JSON.parse(s);
+        if (parsed && typeof parsed === "object") {
+          // prefer temperature/humidity if present
+          const temp = parsed.temperature ?? parsed.temp ?? parsed.value;
+          const hum = parsed.humidity ?? parsed.hum;
+          const status = parsed.status ?? parsed.state ?? null;
+          const parts: string[] = [];
+          if (status) parts.push(status.toString());
+          if (typeof temp === "number" || typeof temp === "string") parts.push(`T:${temp}`);
+          if (typeof hum === "number" || typeof hum === "string") parts.push(`H:${hum}`);
+          if (parts.length > 0) return parts.join(" • ");
+          return JSON.stringify(parsed);
+        }
+      } catch {
+        // not JSON
+      }
+      // truncate long strings
+      return s.length > 40 ? s.slice(0, 36) + "..." : s;
+    }
+    return String(s);
+  };
 
   const totalDevices = useMemo(() => {
     const counted = Object.values(devicesByRoom).reduce(
@@ -116,6 +143,15 @@ export default function HomeDetailPage() {
     <ProtectedRoute>
       <ServiceGuard>
         <Layout>
+          {/* Device control handler */}
+          {/* eslint-disable-next-line @typescript-eslint/no-unused-vars */}
+          {/* Simple control: ON/OFF for LEDs, OPEN/CLOSE for servos */}
+          <div style={{ display: "none" }}>
+            {/* hidden placeholder to keep handler scoped in component */}
+          </div>
+          {/* Control handler */}
+          {/* @ts-ignore */}
+          {null}
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center space-x-3">
               <button
@@ -315,28 +351,66 @@ export default function HomeDetailPage() {
                           </div>
 
                           {devices.length > 0 && (
-                            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {devices.map((device) => (
-                                <div
-                                  key={device.id}
-                                  className="flex items-center justify-between rounded-md border border-gray-100 bg-gray-50 px-3 py-2"
-                                >
-                                  <div className="flex items-center space-x-2">
-                                    <Cpu className="w-4 h-4 text-emerald-600" />
-                                    <div>
-                                      <p className="text-sm font-medium text-gray-900">
-                                        {device.name}
-                                      </p>
-                                      <p className="text-xs text-gray-500">
-                                        {device.type}
-                                      </p>
+                            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                              {devices.map((device) => {
+                                const devType = (device.type || device.DeviceType || "").toString().toLowerCase();
+                                const isLed = devType.includes("led");
+                                const isServo = devType.includes("servo");
+                                const isOnline = ((device.status || device.CurrentState) || "").toString().toLowerCase() === "online";
+                                return (
+                                  <div
+                                    key={device.id || device.DeviceId || device.Name}
+                                    className="p-3 border rounded-md bg-gray-50 flex items-center justify-between"
+                                  >
+                                    <div className="flex items-center space-x-3">
+                                      <Cpu className="w-5 h-5 text-emerald-600" />
+                                      <div>
+                                        <button
+                                          onClick={() =>
+                                            router.push(`/devices/${device.id || device.DeviceId}`)
+                                          }
+                                          className="text-sm font-semibold text-gray-900 hover:underline"
+                                        >
+                                          {device.name || device.Name || "Unknown Device"}
+                                        </button>
+                                        <p className="text-xs text-gray-500 mt-0.5">
+                                          {(device.type || device.DeviceType || "").toString().replace("_", " ")}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-col items-end space-y-2">
+                                      <span className={`text-xs px-2 py-1 rounded-full ${isOnline ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>
+                                        {summarizeState(device.status ?? device.CurrentState ?? device.CurrentState)}
+                                      </span>
+                                      <div className="flex items-center space-x-2">
+                                        {isLed && (
+                                          <button
+                                            onClick={async () => {
+                                              try {
+                                                const id = Number(device.DeviceId || device.id);
+                                                await apiService.controlDevice(id, { Action: "TOGGLE", Value: "1" });
+                                                alert("Command sent");
+                                              } catch (e) {
+                                                console.error("Control error", e);
+                                                alert("Failed to send command");
+                                              }
+                                            }}
+                                            className="text-xs text-blue-600 hover:text-blue-800"
+                                          >
+                                            <Power className="w-4 h-4" />
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={() => router.push(`/devices/${device.id || device.DeviceId}`)}
+                                          className="text-xs text-blue-600 hover:text-blue-800"
+                                        >
+                                          Details
+                                        </button>
+                                      </div>
                                     </div>
                                   </div>
-                                  <span className="text-xs text-green-600">
-                                    {device.status || "online"}
-                                  </span>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
                         </div>

@@ -74,7 +74,7 @@ function UserDashboardInner() {
   } = useServiceAccess();
   const [homes, setHomes] = useState<HomeType[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [devices, setDevices] = useState<Device[]>([]);
+  const [devices, setDevices] = useState<any[]>([]);
   const [selectedHomeId, setSelectedHomeId] = useState<string | null>(null);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -165,7 +165,7 @@ function UserDashboardInner() {
               // Fetch devices cho tất cả phòng
               for (const room of homeRooms || []) {
                 try {
-                  const roomDevices = await apiService.getDevicesByRoom(room.id);
+                  const roomDevices = await apiService.getDevicesByRoom(Number(room.id));
                   allDevices.push(...(roomDevices || []));
                 } catch (err) {
                   console.error(`Error fetching devices for room ${room.id}:`, err);
@@ -177,7 +177,15 @@ function UserDashboardInner() {
           }
           
           setRooms(allRooms);
-          setDevices(allDevices);
+          const normalizedAllDevices = (allDevices || []).map((d: any) => ({
+            id: (d?.Id ?? d?.id ?? d?.DeviceId ?? "").toString(),
+            DeviceId: d?.DeviceId ?? d?.Id ?? d?.id ?? 0,
+            Name: d?.Name ?? d?.name ?? "",
+            DeviceType: d?.DeviceType ?? d?.deviceType ?? "",
+            CurrentState: d?.CurrentState ?? d?.currentState ?? d?.status ?? "",
+            RoomId: (d?.RoomId ?? d?.roomId ?? d?.room_id ?? "")?.toString(),
+          }));
+          setDevices(normalizedAllDevices);
           if (allRooms && allRooms.length > 0 && defaultHomeId) {
             const firstRoom = allRooms.find((r) => r.homeId === defaultHomeId) || allRooms[0];
             setSelectedRoomId(firstRoom?.id || null);
@@ -279,13 +287,21 @@ function UserDashboardInner() {
             const allDevices: Device[] = [];
             for (const room of homeRooms || []) {
               try {
-                const roomDevices = await apiService.getDevicesByRoom(room.id);
+                const roomDevices = await apiService.getDevicesByRoom(Number(room.id));
                 allDevices.push(...(roomDevices || []));
               } catch (err) {
                 console.error(`Error fetching devices for room ${room.id}:`, err);
               }
             }
-            setDevices(allDevices);
+            const normalizedAllDevices = (allDevices || []).map((d: any) => ({
+              id: (d?.Id ?? d?.id ?? d?.DeviceId ?? "").toString(),
+              DeviceId: d?.DeviceId ?? d?.Id ?? d?.id ?? 0,
+              Name: d?.Name ?? d?.name ?? "",
+              DeviceType: d?.DeviceType ?? d?.deviceType ?? "",
+              CurrentState: d?.CurrentState ?? d?.currentState ?? d?.status ?? "",
+              RoomId: (d?.RoomId ?? d?.roomId ?? d?.room_id ?? "")?.toString(),
+            }));
+            setDevices(normalizedAllDevices);
           } else {
             setRooms([]);
             setDevices([]);
@@ -383,9 +399,11 @@ function UserDashboardInner() {
 
   // Lấy thông tin cảm biến cho phòng (mock data - cần tích hợp API thực tế)
   const getRoomSensorData = (roomId: string) => {
-    const roomDevices = devices.filter(d => d.roomId === roomId);
-    const dhtDevice = roomDevices.find(d => d.type === "dht");
-    const pirDevice = roomDevices.find(d => d.type === "pir");
+    const roomDevices = devices.filter(
+      (d) => String(d.roomId ?? d.RoomId ?? "") === String(roomId)
+    );
+    const dhtDevice = roomDevices.find((d) => (d.type || d.DeviceType || "").toLowerCase() === "dht");
+    const pirDevice = roomDevices.find((d) => (d.type || d.DeviceType || "").toLowerCase() === "pir");
     
     return {
       temperature: dhtDevice ? "28°C" : "N/A",
@@ -404,10 +422,24 @@ function UserDashboardInner() {
 
   // Use Layout with Sidebar for admin, UserLayout for regular users
   const DashboardContent = ({ showHeader = false }: { showHeader?: boolean }) => {
-    const totalHomes = homes.length;
-    const totalRooms = rooms.length;
-    const totalDevices = devices.length;
     const selectedHome = homes.find((h) => h.id === selectedHomeId);
+    const totalHomes = homes.length;
+    // compute rooms/devices for selected home if any — use string compare to be robust
+    const roomsForSelected = selectedHome
+      ? rooms.filter((r) => String(r.homeId) === String(selectedHome.id))
+      : rooms;
+    const totalRooms = roomsForSelected.length;
+    const totalDevices = selectedHome
+      ? roomsForSelected.reduce(
+          (sum, r) =>
+            sum +
+            devices.filter(
+              (d) =>
+                String(d.roomId ?? d.RoomId ?? d.DeviceRoomId ?? "") === String(r.id)
+            ).length,
+          0
+        )
+      : devices.length;
 
     return (
     <>
@@ -645,7 +677,13 @@ function UserDashboardInner() {
                   const deviceCount = rooms
                     .filter((r) => r.homeId === h.id)
                     .reduce(
-                      (sum, r) => sum + devices.filter((d) => d.roomId === r.id).length,
+                      (sum, r) =>
+                        sum +
+                        devices.filter(
+                          (d) =>
+                            String(d.roomId ?? d.RoomId ?? d.DeviceRoomId ?? "") ===
+                            String(r.id)
+                        ).length,
                       0
                     );
                       return (
@@ -701,7 +739,9 @@ function UserDashboardInner() {
                         .map((room) => {
                           const isSelected = room.id === selectedRoomId;
                           const sensorData = getRoomSensorData(room.id);
-                      const deviceCount = devices.filter((d) => d.roomId === room.id).length;
+                      const deviceCount = devices.filter(
+                        (d) => String(d.roomId ?? d.RoomId ?? "") === String(room.id)
+                      ).length;
                           return (
                             <button
                               key={room.id}
@@ -749,38 +789,50 @@ function UserDashboardInner() {
                     <div>
                       <p className="text-sm text-gray-500">Devices</p>
                       <p className="text-lg font-semibold text-gray-900">
-                        {devices.filter((d) => d.roomId === selectedRoomId).length} thiết bị
+                        {devices.filter((d) => String(d.roomId ?? d.RoomId ?? "") === String(selectedRoomId)).length} thiết bị
                       </p>
                     </div>
                     <Cpu className="h-5 w-5 text-emerald-600" />
                   </div>
                   {selectedRoomId ? (
-                    devices.filter((d) => d.roomId === selectedRoomId).length === 0 ? (
+                    devices.filter((d) => String(d.roomId ?? d.RoomId ?? "") === String(selectedRoomId)).length === 0 ? (
                       <p className="text-sm text-gray-500">Chưa có thiết bị trong phòng này.</p>
                     ) : (
                       <div className="space-y-2">
                         {devices
-                          .filter((d) => d.roomId === selectedRoomId)
-                          .map((device) => (
-                            <div
-                              key={device.id}
-                          className="rounded-xl border border-gray-200 px-3 py-2 flex items-center justify-between bg-gray-50"
-                            >
-                              <div>
-                                <p className="font-semibold text-gray-900">{device.name}</p>
-                                <p className="text-xs text-gray-500">
-                                  {device.type || (device as any).deviceType || "Device"}
-                                </p>
+                          .filter(
+                            (d) =>
+                              String(d.roomId ?? d.RoomId ?? "") ===
+                              String(selectedRoomId)
+                          )
+                          .map((device) => {
+                            const id = device.DeviceId ?? device.id ?? device.Id ?? "";
+                            const label = device.Name ?? device.name ?? "Unknown Device";
+                            const devType = String(
+                              device.DeviceType ?? device.type ?? (device as any).deviceType ?? ""
+                            ).replace("_", " ");
+                            const state =
+                              device.CurrentState ?? device.status ?? device.CurrentState ?? "";
+                            const isOnline = String(state).toLowerCase() === "online";
+                            return (
+                              <div
+                                key={id || label}
+                                className="rounded-xl border border-gray-200 px-3 py-2 flex items-center justify-between bg-gray-50"
+                              >
+                                <div>
+                                  <p className="font-semibold text-gray-900">{label}</p>
+                                  <p className="text-xs text-gray-500">{devType || "Device"}</p>
+                                </div>
+                                <span
+                                  className={`text-[11px] px-2 py-1 rounded-full ${getDeviceStatusBadge(
+                                    state
+                                  )}`}
+                                >
+                                  {isOnline ? "Online" : "Offline"}
+                                </span>
                               </div>
-                          <span
-                            className={`text-[11px] px-2 py-1 rounded-full ${getDeviceStatusBadge(
-                              device.status
-                            )}`}
-                          >
-                            {device.status === "online" ? "Online" : "Offline"}
-                          </span>
-                            </div>
-                          ))}
+                            );
+                          })}
                       </div>
                     )
                   ) : (

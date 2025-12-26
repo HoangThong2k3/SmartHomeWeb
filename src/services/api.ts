@@ -18,9 +18,14 @@ import {
   Device,
   CreateDeviceRequest,
   UpdateDeviceRequest,
+  DeviceControlRequest,
   Automation,
   CreateAutomationRequest,
   UpdateAutomationRequest,
+  ToggleAutomationRequest,
+  Scene,
+  CreateSceneRequest,
+  SceneAction,
   SensorData,
   CreateSensorDataRequest,
   SensorDataQuery,
@@ -359,180 +364,73 @@ class ApiService {
   }
 
   private mapDeviceFromApi(api: any): Device {
-    const now = new Date().toISOString();
     return {
-      id: (
-        api?.deviceId ??
-        api?.DeviceId ??
-        api?.id ??
-        api?.Id ??
-        ""
-      ).toString(),
-      name: api?.name ?? api?.Name ?? "",
-      type: this.mapDeviceTypeToFe(api?.deviceType ?? api?.DeviceType),
-      status:
-        (api as any)?.status ||
-        (api?.currentState ?? api?.CurrentState ? "online" : "offline"),
-      roomId: (api?.roomId ?? api?.RoomId ?? "").toString(),
-      currentState: api?.currentState ?? api?.CurrentState ?? null,
-      lastUpdate: now,
-      createdAt: api?.createdAt ?? api?.CreatedAt ?? now,
-      updatedAt: api?.updatedAt ?? api?.UpdatedAt ?? now,
-    } as Device;
+      DeviceId: api?.DeviceId ?? api?.deviceId ?? 0,
+      RoomId: api?.RoomId ?? api?.roomId ?? 0,
+      Name: api?.Name ?? api?.name ?? "",
+      DeviceType: api?.DeviceType ?? api?.deviceType ?? "",
+      CurrentState: api?.CurrentState ?? api?.currentState ?? "",
+    };
   }
 
-  private toApiDeviceCreate(
-    req: CreateDeviceRequest & { currentState?: string }
-  ): any {
-    const deviceType = (req.deviceType || "").toUpperCase();
-    // Validate and convert roomId - must be a valid number
-    const roomIdNum = Number(req.roomId);
-    if (isNaN(roomIdNum) || roomIdNum <= 0) {
-      console.error(
-        "[API] Invalid roomId:",
-        req.roomId,
-        "-> converted to:",
-        roomIdNum
-      );
-      throw new Error(
-        `Invalid roomId: ${req.roomId}. RoomId must be a valid positive number.`
-      );
-    }
-    // Backend API requires PascalCase: RoomId, Name, DeviceType, CurrentState
-    // CurrentState is optional - only include if provided
+  private toApiDeviceCreate(req: CreateDeviceRequest): any {
+    // Backend API requires PascalCase according to new specification
     const payload: any = {
-      RoomId: roomIdNum,
-      Name: req.name,
-      DeviceType: deviceType,
+      RoomId: req.RoomId,
+      Name: req.Name,
+      DeviceType: req.DeviceType,
+      CurrentState: req.CurrentState,
     };
-    // Only add CurrentState if it's provided
-    if (
-      (req as any).currentState !== undefined &&
-      (req as any).currentState !== null &&
-      (req as any).currentState !== ""
-    ) {
-      payload.CurrentState = (req as any).currentState;
-    }
     console.log("[API] toApiDeviceCreate - payload:", payload);
     return payload;
   }
 
-  private toApiDeviceUpdate(
-    req: UpdateDeviceRequest & { currentState?: string }
-  ): any {
-    let roomIdNum: number | undefined = undefined;
-    if (req.roomId) {
-      roomIdNum = Number(req.roomId);
-      // Validate roomId if provided
-      if (isNaN(roomIdNum) || roomIdNum <= 0) {
-        console.error(
-          "[API] Invalid roomId:",
-          req.roomId,
-          "-> converted to:",
-          roomIdNum
-        );
-        throw new Error(
-          `Invalid roomId: ${req.roomId}. RoomId must be a valid positive number.`
-        );
-      }
-    }
-    const deviceType = req.deviceType
-      ? req.deviceType.toUpperCase()
-      : undefined;
-    const currentState = (req as any).currentState ?? undefined;
-    // Backend API requires PascalCase: RoomId, Name, DeviceType, CurrentState
-    const payload: any = {};
-    if (roomIdNum !== undefined) payload.RoomId = roomIdNum;
-    if (req.name !== undefined) payload.Name = req.name;
-    if (deviceType !== undefined) payload.DeviceType = deviceType;
-    if (currentState !== undefined) payload.CurrentState = currentState;
+  private toApiDeviceUpdate(req: UpdateDeviceRequest): any {
+    // According to new API specification, PUT only allows updating Name
+    const payload: any = {
+      Name: req.Name,
+    };
     console.log("[API] toApiDeviceUpdate - payload:", payload);
     return payload;
   }
 
   private mapAutomationFromApi(api: any): Automation {
-    const now = new Date().toISOString();
     return {
-      id: (
-        api?.Id ??
-        api?.id ??
-        api?.automationId ??
-        api?.AutomationId ??
-        ""
-      ).toString(),
-      name: api?.name || api?.Name || "",
-      homeId: (api?.homeId || api?.HomeId || "").toString(),
-
-      // Trạng thái kích hoạt
-      isEnabled:
-        api?.IsEnabled !== undefined
-          ? !!api?.IsEnabled
-          : api?.isEnabled !== undefined
-          ? !!api?.isEnabled
-          : true,
-
-      // Trigger thông số thiết bị
-      triggerType: api?.TriggerType || api?.triggerType || "DeviceState",
-      triggerDeviceId:
-        api?.TriggerDeviceId ?? api?.triggerDeviceId ?? null,
-      triggerCondition:
-        api?.TriggerCondition ?? api?.triggerCondition ?? null,
-      triggerValue:
-        api?.TriggerValue ?? api?.triggerValue ?? null,
-
-      // Trigger theo thời gian (TimeSpan bên backend, FE giữ dạng string)
-      triggerTimeStart:
-        api?.TriggerTimeStart ??
-        api?.triggerTimeStart ??
-        null,
-      triggerTimeEnd:
-        api?.TriggerTimeEnd ??
-        api?.triggerTimeEnd ??
-        null,
-
-      // Action
-      actionDeviceId:
-        api?.ActionDeviceId ??
-        api?.actionDeviceId ??
-        0,
-      actionValue:
-        api?.ActionValue ??
-        api?.actionValue ??
-        0,
-
-      createdAt: api?.createdAt || api?.CreatedAt || now,
-    } as Automation;
+      Id: api?.Id ?? api?.id ?? 0,
+      HomeId: api?.HomeId ?? api?.homeId ?? 0,
+      Name: api?.Name ?? api?.name ?? "",
+      IsEnabled: api?.IsEnabled ?? api?.isEnabled ?? true,
+      TriggerType: api?.TriggerType ?? api?.triggerType ?? "DeviceState",
+      TriggerDeviceId: api?.TriggerDeviceId ?? api?.triggerDeviceId ?? null,
+      TriggerCondition: api?.TriggerCondition ?? api?.triggerCondition ?? null,
+      TriggerValue: api?.TriggerValue ?? api?.triggerValue ?? null,
+      TriggerTimeStart: api?.TriggerTimeStart ?? api?.triggerTimeStart ?? null,
+      TriggerTimeEnd: api?.TriggerTimeEnd ?? api?.triggerTimeEnd ?? null,
+      ActionDeviceId: api?.ActionDeviceId ?? api?.actionDeviceId ?? 0,
+      ActionValue: api?.ActionValue ?? api?.actionValue ?? 0,
+    };
   }
 
   private toApiAutomationCreate(req: CreateAutomationRequest): any {
-    const homeIdNum = parseInt(req.homeId as any);
     return {
-      HomeId: homeIdNum,
-      Name: req.name,
-      IsEnabled: req.isEnabled,
-      TriggerType: req.triggerType,
-      TriggerDeviceId: req.triggerDeviceId,
-      TriggerCondition: req.triggerCondition,
-      TriggerValue: req.triggerValue,
-      TriggerTimeStart: req.triggerTimeStart,
-      TriggerTimeEnd: req.triggerTimeEnd,
-      ActionDeviceId: req.actionDeviceId,
-      ActionValue: req.actionValue,
+      HomeId: req.HomeId,
+      Name: req.Name,
+      TriggerType: req.TriggerType,
+      TriggerDeviceId: req.TriggerDeviceId,
+      TriggerCondition: req.TriggerCondition,
+      TriggerValue: req.TriggerValue,
+      TriggerTimeStart: req.TriggerTimeStart,
+      TriggerTimeEnd: req.TriggerTimeEnd,
+      ActionDeviceId: req.ActionDeviceId,
+      ActionValue: req.ActionValue,
     };
   }
 
   private toApiAutomationUpdate(req: UpdateAutomationRequest): any {
+    // According to new API specification, PUT only allows updating Name and IsEnabled
     return {
-      Name: req.name,
-      IsEnabled: req.isEnabled,
-      TriggerType: req.triggerType,
-      TriggerDeviceId: req.triggerDeviceId,
-      TriggerCondition: req.triggerCondition,
-      TriggerValue: req.triggerValue,
-      TriggerTimeStart: req.triggerTimeStart,
-      TriggerTimeEnd: req.triggerTimeEnd,
-      ActionDeviceId: req.actionDeviceId,
-      ActionValue: req.actionValue,
+      Name: req.Name,
+      IsEnabled: req.IsEnabled,
     };
   }
 
@@ -1344,14 +1242,13 @@ class ApiService {
     const list = await this.request<any[]>(`/admin/mappings`);
 
     return (list || []).map((m) => ({
-      id: m?.Id ?? m?.id ?? 0,
-      deviceId: m?.DeviceId ?? m?.deviceId ?? 0,
-      deviceName: m?.DeviceName ?? m?.deviceName,
-      hardwareIdentifier: m?.HardwareIdentifier ?? m?.hardwareIdentifier,
-      nodeIdentifier: m?.NodeIdentifier ?? m?.nodeIdentifier,
-      homeKey: m?.HomeKey ?? m?.homeKey,
-      description: m?.Description ?? m?.description,
-      createdAt: m?.CreatedAt ?? m?.createdAt ?? new Date().toISOString(),
+      Id: m?.Id ?? m?.id ?? 0,
+      DeviceId: m?.DeviceId ?? m?.deviceId ?? 0,
+      DeviceName: m?.DeviceName ?? m?.deviceName,
+      HardwareIdentifier: m?.HardwareIdentifier ?? m?.hardwareIdentifier,
+      NodeIdentifier: m?.NodeIdentifier ?? m?.nodeIdentifier,
+      HomeKey: m?.HomeKey ?? m?.homeKey ?? "",
+      CreatedAt: m?.CreatedAt ?? m?.createdAt ?? new Date().toISOString(),
     }));
   }
 
@@ -1367,14 +1264,13 @@ class ApiService {
       body: JSON.stringify(body),
     });
     return {
-      id: created?.Id ?? created?.id ?? 0,
-      deviceId: created?.DeviceId ?? created?.deviceId ?? payload.DeviceId,
-      deviceName: created?.DeviceName ?? created?.deviceName,
-      hardwareIdentifier: created?.HardwareIdentifier ?? created?.hardwareIdentifier,
-      nodeIdentifier: created?.NodeIdentifier ?? created?.nodeIdentifier,
-      homeKey: created?.HomeKey ?? created?.homeKey ?? payload.HomeKey,
-      description: created?.Description ?? created?.description ?? payload.Description,
-      createdAt: created?.CreatedAt ?? created?.createdAt ?? new Date().toISOString(),
+      Id: created?.Id ?? created?.id ?? 0,
+      DeviceId: created?.DeviceId ?? created?.deviceId ?? payload.DeviceId,
+      DeviceName: created?.DeviceName ?? created?.deviceName,
+      HardwareIdentifier: created?.HardwareIdentifier ?? created?.hardwareIdentifier,
+      NodeIdentifier: created?.NodeIdentifier ?? created?.nodeIdentifier,
+      HomeKey: created?.HomeKey ?? created?.homeKey ?? payload.HomeKey,
+      CreatedAt: created?.CreatedAt ?? created?.createdAt ?? new Date().toISOString(),
     };
   }
 
@@ -1633,12 +1529,12 @@ class ApiService {
   }
 
   // Devices Management APIs
-  async getDeviceById(id: string): Promise<Device> {
-    const data = await this.request<any>(`/Devices/${id}`);
+  async getDeviceById(deviceId: number): Promise<Device> {
+    const data = await this.request<any>(`/Devices/${deviceId}`);
     return this.mapDeviceFromApi(data);
   }
 
-  async getDevicesByRoom(roomId: string): Promise<Device[]> {
+  async getDevicesByRoom(roomId: number): Promise<Device[]> {
     console.log("[API] getDevicesByRoom - roomId:", roomId);
     try {
       const list = await this.request<any[]>(`/Devices/room/${roomId}`);
@@ -1655,18 +1551,8 @@ class ApiService {
 
   async createDevice(deviceData: CreateDeviceRequest): Promise<Device> {
     console.log("[API] createDevice - input:", deviceData);
-    console.log(
-      "[API] createDevice - roomId type:",
-      typeof deviceData.roomId,
-      "value:",
-      deviceData.roomId
-    );
     try {
-      // Only include currentState if provided, don't default to "OFF"
-      const payload = this.toApiDeviceCreate({
-        ...deviceData,
-        currentState: (deviceData as any).currentState, // Keep as undefined if not provided
-      } as any);
+      const payload = this.toApiDeviceCreate(deviceData);
       console.log("[API] createDevice - payload:", payload);
       console.log(
         "[API] createDevice - payload JSON:",
@@ -1686,24 +1572,15 @@ class ApiService {
   }
 
   async updateDevice(
-    id: string,
+    deviceId: number,
     deviceData: UpdateDeviceRequest
   ): Promise<void> {
-    console.log("[API] updateDevice - id:", id, "data:", deviceData);
-    console.log(
-      "[API] updateDevice - roomId type:",
-      typeof deviceData.roomId,
-      "value:",
-      deviceData.roomId
-    );
-    const payload = this.toApiDeviceUpdate({
-      ...deviceData,
-      currentState: (deviceData as any).currentState,
-    } as any);
+    console.log("[API] updateDevice - deviceId:", deviceId, "data:", deviceData);
+    const payload = this.toApiDeviceUpdate(deviceData);
     console.log("[API] updateDevice - payload:", payload);
     console.log("[API] updateDevice - payload JSON:", JSON.stringify(payload));
     try {
-      await this.request<void>(`/Devices/${id}`, {
+      await this.request<void>(`/Devices/${deviceId}`, {
         method: "PUT",
         body: JSON.stringify(payload),
       });
@@ -1714,7 +1591,7 @@ class ApiService {
         console.log(
           "[API] updateDevice - retrying with POST + X-HTTP-Method-Override"
         );
-        await this.request<void>(`/Devices/${id}`, {
+        await this.request<void>(`/Devices/${deviceId}`, {
           method: "POST",
           headers: { "X-HTTP-Method-Override": "PUT" },
           body: JSON.stringify(payload),
@@ -1726,10 +1603,10 @@ class ApiService {
     }
   }
 
-  async deleteDevice(id: string): Promise<void> {
-    console.log("[API] deleteDevice - id:", id);
+  async deleteDevice(deviceId: number): Promise<void> {
+    console.log("[API] deleteDevice - deviceId:", deviceId);
     try {
-      await this.request<void>(`/Devices/${id}`, {
+      await this.request<void>(`/Devices/${deviceId}`, {
         method: "DELETE",
       });
       console.log("[API] deleteDevice - success");
@@ -1739,7 +1616,7 @@ class ApiService {
         console.log(
           "[API] deleteDevice - retrying with POST + X-HTTP-Method-Override"
         );
-        await this.request<void>(`/Devices/${id}`, {
+        await this.request<void>(`/Devices/${deviceId}`, {
           method: "POST",
           headers: { "X-HTTP-Method-Override": "DELETE" },
         });
@@ -1752,23 +1629,17 @@ class ApiService {
 
   // Điều khiển thiết bị qua endpoint control (Downlink)
   async controlDevice(
-    id: string,
-    payload: { action: string; value?: string }
+    deviceId: number,
+    payload: DeviceControlRequest
   ): Promise<void> {
-    const body: any = {
-      Action: payload.action,
-    };
-    if (payload.value !== undefined) {
-      body.Value = payload.value;
-    }
-    await this.request<void>(`/Devices/${id}/control`, {
+    await this.request<void>(`/Devices/${deviceId}/control`, {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
     });
   }
 
   // Automations Management APIs
-  async getAutomationsByHome(homeId: string): Promise<Automation[]> {
+  async getAutomationsByHome(homeId: number): Promise<Automation[]> {
     console.log("[API] getAutomationsByHome - homeId:", homeId);
     try {
       const list = await this.request<any[]>(`/Automations/home/${homeId}`);
@@ -1786,7 +1657,7 @@ class ApiService {
     }
   }
 
-  async getAutomationById(id: string): Promise<Automation> {
+  async getAutomationById(id: number): Promise<Automation> {
     const data = await this.request<any>(`/Automations/${id}`);
     return this.mapAutomationFromApi(data);
   }
@@ -1796,19 +1667,8 @@ class ApiService {
   ): Promise<Automation> {
     console.log("[API] createAutomation - input:", automationData);
 
-    // Validate homeId
-    const homeIdNum = parseInt(automationData.homeId as any);
-    if (isNaN(homeIdNum) || homeIdNum <= 0) {
-      const errorMsg = `Invalid homeId: ${automationData.homeId}. Must be a valid number > 0.`;
-      console.error("[API] createAutomation - validation error:", errorMsg);
-      throw new Error(errorMsg);
-    }
-
     try {
-      const payload = this.toApiAutomationCreate({
-        ...automationData,
-        homeId: homeIdNum.toString(),
-      });
+      const payload = this.toApiAutomationCreate(automationData);
       console.log("[API] createAutomation - payload:", payload);
 
       const created = await this.request<any>("/Automations", {
@@ -1825,7 +1685,7 @@ class ApiService {
   }
 
   async updateAutomation(
-    id: string,
+    id: number,
     automationData: UpdateAutomationRequest
   ): Promise<void> {
     console.log("[API] updateAutomation - id:", id, "data:", automationData);
@@ -1844,7 +1704,7 @@ class ApiService {
     }
   }
 
-  async deleteAutomation(id: string): Promise<void> {
+  async deleteAutomation(id: number): Promise<void> {
     console.log("[API] deleteAutomation - id:", id);
     try {
       await this.request<void>(`/Automations/${id}`, {
@@ -1857,35 +1717,87 @@ class ApiService {
     }
   }
 
-  async toggleAutomation(id: string): Promise<void> {
+  async toggleAutomation(id: number): Promise<void> {
     await this.request<void>(`/Automations/${id}/toggle`, {
       method: "PATCH",
     });
   }
 
+  // Scenes Management APIs
+  async createScene(sceneData: CreateSceneRequest): Promise<Scene> {
+    console.log("[API] createScene - input:", sceneData);
+    try {
+      const payload = this.toApiSceneCreate(sceneData);
+      console.log("[API] createScene - payload:", payload);
+
+      const created = await this.request<any>("/Scenes", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      console.log("[API] createScene - response:", created);
+      return this.mapSceneFromApi(created);
+    } catch (error: any) {
+      console.error("[API] createScene - error:", error?.message || error);
+      console.error("[API] createScene - error details:", error);
+      throw error;
+    }
+  }
+
+  async getScenesByHome(homeId: number): Promise<Scene[]> {
+    console.log("[API] getScenesByHome - homeId:", homeId);
+    try {
+      const list = await this.request<any[]>(`/Scenes/home/${homeId}`);
+      console.log(
+        "[API] getScenesByHome - received scenes:",
+        list?.length || 0
+      );
+      return (list || []).map((s) => this.mapSceneFromApi(s));
+    } catch (error: any) {
+      console.error(
+        "[API] getScenesByHome - error:",
+        error?.message || error
+      );
+      throw error;
+    }
+  }
+
+  async executeScene(sceneId: number): Promise<void> {
+    console.log("[API] executeScene - sceneId:", sceneId);
+    try {
+      await this.request<void>(`/Scenes/${sceneId}/execute`, {
+        method: "POST",
+      });
+      console.log("[API] executeScene - success");
+    } catch (error: any) {
+      console.error("[API] executeScene - error:", error?.message || error);
+      throw error;
+    }
+  }
+
+  async deleteScene(sceneId: number): Promise<void> {
+    console.log("[API] deleteScene - sceneId:", sceneId);
+    try {
+      await this.request<void>(`/Scenes/${sceneId}`, {
+        method: "DELETE",
+      });
+      console.log("[API] deleteScene - success");
+    } catch (error: any) {
+      console.error("[API] deleteScene - error:", error?.message || error);
+      throw error;
+    }
+  }
+
   // Sensor Data Management APIs
-  async createSensorData(
-    sensorData: CreateSensorDataRequest & { timeStamp?: string; valueRaw?: any }
-  ): Promise<any> {
+  async createSensorData(sensorData: CreateSensorDataRequest): Promise<SensorData> {
     console.log("[API] createSensorData - input:", sensorData);
     try {
       const payload: any = {
-        deviceId: typeof sensorData.deviceId === 'string' 
-          ? parseInt(sensorData.deviceId) 
-          : sensorData.deviceId,
+        DeviceId: sensorData.DeviceId,
+        Value: sensorData.Value,
       };
 
-      // Handle value - can be string (JSON) or object that needs stringification
-      if (typeof (sensorData as any).value === "string") {
-        payload.value = (sensorData as any).value;
-      } else {
-        payload.value = JSON.stringify(
-          (sensorData as any).valueRaw ?? (sensorData as any).value ?? {}
-        );
-      }
-
-      if ((sensorData as any).timeStamp) {
-        payload.timeStamp = (sensorData as any).timeStamp;
+      if (sensorData.TimeStamp) {
+        payload.TimeStamp = sensorData.TimeStamp;
       }
 
       console.log("[API] createSensorData - payload:", payload);
@@ -1894,19 +1806,29 @@ class ApiService {
         body: JSON.stringify(payload),
       });
       console.log("[API] createSensorData - response:", result);
-      return result;
+      return {
+        Id: result?.Id ?? result?.id ?? 0,
+        DeviceId: result?.DeviceId ?? result?.deviceId ?? sensorData.DeviceId,
+        Value: result?.Value ?? result?.value ?? sensorData.Value,
+        TimeStamp: result?.TimeStamp ?? result?.timeStamp ?? new Date().toISOString(),
+      };
     } catch (error: any) {
       console.error("[API] createSensorData - error:", error?.message || error);
       throw error;
     }
   }
 
-  async getSensorDataById(id: string): Promise<any> {
+  async getSensorDataById(id: number): Promise<SensorData> {
     console.log("[API] getSensorDataById - id:", id);
     try {
       const result = await this.request<any>(`/SensorData/${id}`);
       console.log("[API] getSensorDataById - response:", result);
-      return result;
+      return {
+        Id: result?.Id ?? result?.id ?? 0,
+        DeviceId: result?.DeviceId ?? result?.deviceId ?? 0,
+        Value: result?.Value ?? result?.value ?? "",
+        TimeStamp: result?.TimeStamp ?? result?.timeStamp ?? "",
+      };
     } catch (error: any) {
       console.error(
         "[API] getSensorDataById - error:",
@@ -1916,14 +1838,19 @@ class ApiService {
     }
   }
 
-  async getLatestSensorData(deviceId: string): Promise<any> {
+  async getLatestSensorData(deviceId: number): Promise<SensorData> {
     console.log("[API] getLatestSensorData - deviceId:", deviceId);
     try {
       const result = await this.request<any>(
         `/SensorData/device/${deviceId}/latest`
       );
       console.log("[API] getLatestSensorData - response:", result);
-      return result;
+      return {
+        Id: result?.Id ?? result?.id ?? 0,
+        DeviceId: result?.DeviceId ?? result?.deviceId ?? deviceId,
+        Value: result?.Value ?? result?.value ?? "",
+        TimeStamp: result?.TimeStamp ?? result?.timeStamp ?? "",
+      };
     } catch (error: any) {
       console.error(
         "[API] getLatestSensorData - error:",
@@ -1934,17 +1861,16 @@ class ApiService {
   }
 
   async getSensorData(
-    deviceId: string,
+    deviceId: number,
     query?: Omit<SensorDataQuery, "deviceId">
-  ): Promise<any[]> {
+  ): Promise<SensorData[]> {
     console.log("[API] getSensorData - deviceId:", deviceId, "query:", query);
     try {
       const params = new URLSearchParams();
-      if ((query as any)?.from) params.append("from", (query as any).from);
-      if ((query as any)?.to) params.append("to", (query as any).to);
-      if (query?.page) params.append("page", query.page.toString());
-      if ((query as any)?.pageSize)
-        params.append("pageSize", (query as any).pageSize.toString());
+      if (query?.from) params.append("from", query.from);
+      if (query?.to) params.append("to", query.to);
+      if (query?.page && query.page >= 1) params.append("page", query.page.toString());
+      if (query?.pageSize && query.pageSize <= 1000) params.append("pageSize", query.pageSize.toString());
 
       const queryString = params.toString();
       const endpoint = `/SensorData/device/${deviceId}${
@@ -1956,7 +1882,13 @@ class ApiService {
         "[API] getSensorData - received records:",
         result?.length || 0
       );
-      return result;
+
+      return (result || []).map((item) => ({
+        Id: item?.Id ?? item?.id ?? 0,
+        DeviceId: item?.DeviceId ?? item?.deviceId ?? deviceId,
+        Value: item?.Value ?? item?.value ?? "",
+        TimeStamp: item?.TimeStamp ?? item?.timeStamp ?? "",
+      }));
     } catch (error: any) {
       console.error("[API] getSensorData - error:", error?.message || error);
       throw error;
@@ -2052,6 +1984,34 @@ class ApiService {
         Status: entry?.Status || entry?.status || "Unknown",
         Description: entry?.Description || entry?.description || "",
         DurationMs: entry?.DurationMs ?? entry?.durationMs ?? 0,
+      })),
+    };
+  }
+
+  // Scene API Mappers
+  private mapSceneFromApi(api: any): Scene {
+    return {
+      Id: api?.Id ?? api?.id ?? 0,
+      Name: api?.Name ?? api?.name ?? "",
+      Description: api?.Description ?? api?.description ?? "",
+      ActionCount: api?.ActionCount ?? api?.actionCount ?? 0,
+      Actions: (api?.Actions ?? api?.actions ?? []).map((action: any) => ({
+        DeviceId: action?.DeviceId ?? action?.deviceId ?? 0,
+        ActionType: action?.ActionType ?? action?.actionType ?? "",
+        ActionValue: action?.ActionValue ?? action?.actionValue ?? "",
+      })),
+    };
+  }
+
+  private toApiSceneCreate(req: CreateSceneRequest): any {
+    return {
+      HomeId: req.HomeId,
+      Name: req.Name,
+      Description: req.Description,
+      Actions: req.Actions.map(action => ({
+        DeviceId: action.DeviceId,
+        ActionType: action.ActionType,
+        ActionValue: action.ActionValue,
       })),
     };
   }

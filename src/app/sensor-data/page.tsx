@@ -7,7 +7,7 @@ import { ServiceGuard } from "@/components/auth/ServiceGuard";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiService } from "@/services/api";
 import { useServiceAccess } from "@/hooks/useServiceAccess";
-import { Device, Home, Room, CreateSensorDataRequest } from "@/types";
+import { Device, Home, Room, CreateSensorDataRequest, SensorData, SensorDataQuery } from "@/types";
 import {
   Thermometer,
   Plus,
@@ -26,8 +26,8 @@ export default function SensorDataPage() {
     isActive: canUseService,
     isLoading: isServiceLoading,
   } = useServiceAccess();
-  const [sensorData, setSensorData] = useState<any[]>([]);
-   const [latestData, setLatestData] = useState<any | null>(null);
+  const [sensorData, setSensorData] = useState<SensorData[]>([]);
+  const [latestData, setLatestData] = useState<SensorData | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [homes, setHomes] = useState<Home[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,7 +35,7 @@ export default function SensorDataPage() {
   const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingSensorData, setEditingSensorData] = useState<any | null>(null);
-  const [selectedDevice, setSelectedDevice] = useState<string>("");
+  const [selectedDevice, setSelectedDevice] = useState<number | null>(null);
   const [dateRange, setDateRange] = useState({ from: "", to: "" });
   const [page, setPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(200);
@@ -79,7 +79,7 @@ export default function SensorDataPage() {
           const homeRooms = await apiService.getRoomsByHome(home.id);
           for (const room of homeRooms) {
             try {
-              const roomDevices = await apiService.getDevicesByRoom(room.id);
+              const roomDevices = await apiService.getDevicesByRoom(Number(room.id));
               allDevices.push(...roomDevices);
             } catch (err: any) {
               console.error(
@@ -119,7 +119,7 @@ export default function SensorDataPage() {
       );
 
       if (selectedDevice) {
-        const query: any = {};
+        const query: Omit<SensorDataQuery, "deviceId"> = {};
         if (dateRange.from) {
           query.from = new Date(dateRange.from).toISOString();
         }
@@ -140,10 +140,10 @@ export default function SensorDataPage() {
         // Normalize data to handle both PascalCase and camelCase
         const normalizedData = Array.isArray(data)
           ? data.map((item: any) => ({
-              id: String(item?.id ?? item?.Id ?? ""),
-              deviceId: String(item?.deviceId ?? item?.DeviceId ?? item?.device_id ?? ""),
-              value: String(item?.value ?? item?.Value ?? ""),
-              timeStamp: String(item?.timeStamp ?? item?.TimeStamp ?? item?.timestamp ?? item?.Timestamp ?? ""),
+              Id: Number(item?.Id ?? item?.id ?? 0),
+              DeviceId: Number(item?.DeviceId ?? item?.deviceId ?? item?.device_id ?? 0),
+              Value: String(item?.Value ?? item?.value ?? ""),
+              TimeStamp: String(item?.TimeStamp ?? item?.timeStamp ?? item?.timestamp ?? item?.Timestamp ?? ""),
             }))
           : [];
         setSensorData(normalizedData);
@@ -167,13 +167,7 @@ export default function SensorDataPage() {
       setIsLoadingLatest(true);
       const latest = await apiService.getLatestSensorData(selectedDevice);
       if (latest) {
-        setLatestData(
-          Array.isArray(latest)
-            ? latest[0]
-            : {
-                ...latest,
-              }
-        );
+        setLatestData(latest);
       } else {
         setLatestData(null);
       }
@@ -190,28 +184,21 @@ export default function SensorDataPage() {
       setError(null);
       console.log("[SensorDataPage] Creating sensor data with form:", sensorDataForm);
 
-      // Validate deviceId
+      // Validate DeviceId
       if (!sensorDataForm.deviceId || isNaN(Number(sensorDataForm.deviceId))) {
         throw new Error("Device ID is required and must be a number");
       }
 
-      // Validate value is JSON
-      let valueString = sensorDataForm.value;
-      try {
-        if (typeof valueString !== "string") valueString = String(valueString);
-        JSON.parse(valueString);
-      } catch {
-        throw new Error("Value must be valid JSON string");
+      // Validate Value is string
+      if (!sensorDataForm.value || typeof sensorDataForm.value !== "string") {
+        throw new Error("Value is required and must be a string");
       }
 
       // Build payload
-      const payload: CreateSensorDataRequest & { timeStamp?: string; valueRaw?: any } = {
-        deviceId: typeof sensorDataForm.deviceId === 'string' 
-          ? parseInt(sensorDataForm.deviceId) 
-          : sensorDataForm.deviceId,
-        value: valueString,
-        unit: sensorDataForm.unit || undefined,
-        timeStamp: sensorDataForm.timeStamp
+      const payload: CreateSensorDataRequest = {
+        DeviceId: Number(sensorDataForm.deviceId),
+        Value: sensorDataForm.value,
+        TimeStamp: sensorDataForm.timeStamp
           ? new Date(sensorDataForm.timeStamp).toISOString()
           : undefined,
       };
@@ -258,7 +245,7 @@ export default function SensorDataPage() {
     }
   };
 
-  const handleDeleteSensorData = async (id: string) => {
+  const handleDeleteSensorData = async (id: number) => {
     if (!confirm("Are you sure you want to delete this sensor data?")) return;
 
     try {
@@ -267,7 +254,7 @@ export default function SensorDataPage() {
 
       // Note: Backend might not support DELETE for sensor data
       // This is a placeholder implementation
-      setSensorData(sensorData.filter((item) => item.id !== id));
+      setSensorData(sensorData.filter((item) => item.Id !== id));
       console.log("[SensorDataPage] Sensor data deleted successfully");
     } catch (err: any) {
       const errorMsg =
@@ -377,14 +364,14 @@ export default function SensorDataPage() {
                 Device
               </label>
               <select
-                value={selectedDevice}
-                onChange={(e) => setSelectedDevice(e.target.value)}
+                value={selectedDevice || ""}
+                onChange={(e) => setSelectedDevice(e.target.value ? Number(e.target.value) : null)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select a device</option>
                 {devices.map((device) => (
-                  <option key={device.id} value={device.id}>
-                    {device.name} (ID: {device.id})
+                  <option key={device.DeviceId} value={device.DeviceId}>
+                    {device.Name} (ID: {device.DeviceId})
                   </option>
                 ))}
               </select>
@@ -478,26 +465,21 @@ export default function SensorDataPage() {
             {latestData ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                  <p className="text-xs text-gray-500">Value (JSON)</p>
+                  <p className="text-xs text-gray-500">Value</p>
                   <pre className="text-xs bg-white rounded p-2 border overflow-x-auto whitespace-pre-wrap">
-                    {JSON.stringify(parseSensorValue(latestData.value), null, 2)}
+                    {latestData.Value}
                   </pre>
                 </div>
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                   <p className="text-xs text-gray-500">Timestamp</p>
                   <p className="text-sm font-medium text-gray-900">
-                    {formatTimestamp(
-                      latestData.timeStamp ||
-                        latestData.TimeStamp ||
-                        latestData.timestamp ||
-                        latestData.Timestamp
-                    )}
+                    {formatTimestamp(latestData?.TimeStamp)}
                   </p>
                 </div>
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                   <p className="text-xs text-gray-500">Record ID</p>
                   <p className="text-sm font-medium text-gray-900">
-                    {latestData.id || latestData.Id || "N/A"}
+                    {latestData.Id}
                   </p>
                 </div>
               </div>
@@ -564,22 +546,16 @@ export default function SensorDataPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      ID
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Device ID
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Temperature
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Humidity
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Value (JSON)
+                      Value
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Timestamp
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
                     </th>
                   </tr>
                 </thead>
@@ -595,23 +571,18 @@ export default function SensorDataPage() {
                       typeof (parsedValue as any)?.humidity === "number"
                         ? (parsedValue as any).humidity
                         : null;
-                    // Create stable key using id, deviceId, timeStamp, and index
-                    const stableKey = item.id || `${item.deviceId}-${item.timeStamp}-${index}` || `sensor-${index}`;
                     return (
-                      <tr key={stableKey} className="hover:bg-gray-50">
+                      <tr key={item.id || `${item.deviceId}-${item.timeStamp}-${index}`} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {item.id || "N/A"}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {item.deviceId || "N/A"}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {temp !== null ? `${temp}°` : "—"}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {hum !== null ? `${hum}%` : "—"}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-900">
                           <div className="max-w-md">
                             <pre className="text-xs bg-gray-100 p-2 rounded overflow-x-auto whitespace-pre-wrap">
-                              {JSON.stringify(parsedValue, null, 2)}
+                              {item.value}
                             </pre>
                           </div>
                         </td>
@@ -692,44 +663,21 @@ function CreateSensorDataForm({
     }));
   }, []);
 
-  const [jsonError, setJsonError] = useState<string | undefined>();
-
-  const validateJson = (value: string) => {
-    if (!value.trim()) {
-      setJsonError(undefined);
-      return;
-    }
-    try {
-      JSON.parse(value);
-      setJsonError(undefined);
-    } catch (e: any) {
-      setJsonError(`Invalid JSON: ${e.message}`);
-    }
-  };
-
-  const loadExample = (type: "temperature" | "humidity" | "motion" | "multi") => {
+  const loadExample = (type: "temperature" | "humidity" | "motion" | "text") => {
     const examples = {
-      temperature: JSON.stringify({ temperature: 22.5, unit: "celsius" }, null, 2),
-      humidity: JSON.stringify({ humidity: 65, unit: "percent" }, null, 2),
-      motion: JSON.stringify({ motion: true, confidence: 0.95 }, null, 2),
-      multi: JSON.stringify(
-        {
-          temperature: 22.5,
-          humidity: 65,
-          pressure: 1013.25,
-          unit: {
-            temperature: "celsius",
-            humidity: "percent",
-            pressure: "hPa",
-          },
-        },
-        null,
-        2
-      ),
+      temperature: "22.5°C",
+      humidity: "65%",
+      motion: "Motion detected",
+      text: "Sensor reading: normal",
     };
     const example = examples[type];
     setFormData({ ...formData, value: example });
-    validateJson(example);
+  };
+
+  const [jsonError, setJsonError] = useState<string | undefined>();
+  const validateJson = (_value: string) => {
+    // Accept any string for Value in new API; keep placeholder validator
+    setJsonError(undefined);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -757,8 +705,8 @@ function CreateSensorDataForm({
             >
               <option value="">Select a device</option>
               {devices.map((device) => (
-                <option key={device.id} value={device.id}>
-                  {device.name} (ID: {device.id})
+                <option key={device.DeviceId} value={device.DeviceId}>
+                  {device.Name} (ID: {device.DeviceId})
                 </option>
               ))}
             </select>
@@ -767,7 +715,7 @@ function CreateSensorDataForm({
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-gray-700">
-                Value (JSON) <span className="text-red-500">*</span>
+                Value <span className="text-red-500">*</span>
               </label>
               <div className="flex gap-2">
                 <button
@@ -793,10 +741,10 @@ function CreateSensorDataForm({
                 </button>
                 <button
                   type="button"
-                  onClick={() => loadExample("multi")}
+                  onClick={() => loadExample("text")}
                   className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
                 >
-                  Multi
+                  Text
                 </button>
               </div>
             </div>
@@ -966,9 +914,6 @@ function EditSensorDataForm({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (jsonError) {
-      return;
-    }
     onSubmit(formData);
   };
 
@@ -990,8 +935,8 @@ function EditSensorDataForm({
             >
               <option value="">Select a device</option>
               {devices.map((device) => (
-                <option key={device.id} value={device.id}>
-                  {device.name} (ID: {device.id})
+                <option key={device.DeviceId} value={device.DeviceId}>
+                  {device.Name} (ID: {device.DeviceId})
                 </option>
               ))}
             </select>

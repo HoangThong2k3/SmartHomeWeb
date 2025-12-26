@@ -159,6 +159,9 @@ export interface Room {
   name: string;
   type: "living_room" | "bedroom" | "kitchen" | "bathroom" | "garage" | "other";
   homeId: string;
+  // Optional devices when backend embeds devices in the Room response
+  Devices?: Device[];
+  devices?: Device[];
   home?: Home;
   createdAt: string;
   updatedAt: string;
@@ -181,111 +184,114 @@ export interface UpdateRoomRequest {
     | "other";
 }
 
-// Device Types
+// Device Types - Updated according to new API specification
 export interface Device {
-  id: string;
-  name: string;
-  type: "servo" | "led" | "buzzer" | "pir" | "dht" | "mq2" | "mq135";
-  status: "online" | "offline";
-  roomId: string;
-  room?: Room;
-  currentState?: string | null;
-  lastUpdate: string;
-  createdAt: string;
-  updatedAt: string;
+  DeviceId: number;
+  RoomId: number;
+  Name: string;
+  DeviceType: string;
+  CurrentState: string;
+  // Frontend-friendly aliases
+  type?: string;
+  status?: string;
 }
 
 export interface CreateDeviceRequest {
-  name: string;
-  deviceType: string;
-  roomId: string;
-  currentState?: string;
+  RoomId: number;
+  Name: string;
+  DeviceType: string;
+  CurrentState: string;
 }
 
 export interface UpdateDeviceRequest {
-  name?: string;
-  deviceType?: string;
-  roomId?: string;
-  currentState?: string;
+  Name: string;
 }
 
-// Automation Types
+export interface DeviceControlRequest {
+  Action: string;
+  Value: string;
+}
+
+// Automation Types - Updated according to new API specification
 export interface Automation {
-  id: string;
-  name: string;
-  homeId: string;
-  /** Có đang kích hoạt luật hay không (maps to IsEnabled) */
-  isEnabled: boolean;
-
-  /** Loại trigger: "DeviceState" | "Time" | ... (maps to TriggerType) */
-  triggerType: string;
-
-  /** Trigger theo trạng thái thiết bị (maps to TriggerDeviceId / TriggerCondition / TriggerValue) */
-  triggerDeviceId?: number | null;
-  triggerCondition?: string | null;
-  triggerValue?: number | null;
-
-  /** Trigger theo thời gian (maps to TriggerTimeStart / TriggerTimeEnd, backend dùng TimeSpan) */
-  triggerTimeStart?: string | null; // dạng "HH:mm:ss"
-  triggerTimeEnd?: string | null; // dạng "HH:mm:ss"
-
-  /** Thiết bị bị tác động và giá trị hành động (maps to ActionDeviceId / ActionValue) */
-  actionDeviceId: number;
-  actionValue: number;
-
-  createdAt?: string;
+  Id: number;
+  HomeId: number;
+  Name: string;
+  IsEnabled: boolean;
+  TriggerType: string;
+  TriggerDeviceId?: number | null;
+  TriggerCondition?: string | null;
+  TriggerValue?: number | null;
+  TriggerTimeStart?: string | null;
+  TriggerTimeEnd?: string | null;
+  ActionDeviceId: number;
+  ActionValue: number;
 }
 
 export interface CreateAutomationRequest {
-  name: string;
-  homeId: string;
-  isEnabled: boolean;
-  triggerType: string;
-  triggerDeviceId?: number;
-  triggerCondition?: string;
-  triggerValue?: number;
-  triggerTimeStart?: string;
-  triggerTimeEnd?: string;
-  actionDeviceId: number;
-  actionValue: number;
+  HomeId: number;
+  Name: string;
+  TriggerType: string;
+  TriggerDeviceId?: number | null;
+  TriggerCondition?: string | null;
+  TriggerValue?: number | null;
+  TriggerTimeStart?: string | null;
+  TriggerTimeEnd?: string | null;
+  ActionDeviceId: number;
+  ActionValue: number;
 }
 
 export interface UpdateAutomationRequest {
-  name?: string;
-  isEnabled?: boolean;
-  triggerType?: string;
-  triggerDeviceId?: number | null;
-  triggerCondition?: string | null;
-  triggerValue?: number | null;
-  triggerTimeStart?: string | null;
-  triggerTimeEnd?: string | null;
-  actionDeviceId?: number;
-  actionValue?: number;
+  Name: string;
+  IsEnabled: boolean;
 }
 
-// Sensor Data Types
+export interface ToggleAutomationRequest {
+  // PATCH endpoint doesn't need body
+}
+
+// Scene Types - According to new API specification
+export interface SceneAction {
+  DeviceId: number;
+  ActionType: string;
+  ActionValue: string;
+}
+
+export interface Scene {
+  Id: number;
+  Name: string;
+  Description: string;
+  ActionCount: number;
+  Actions: SceneAction[];
+}
+
+export interface CreateSceneRequest {
+  HomeId: number;
+  Name: string;
+  Description: string;
+  Actions: SceneAction[];
+}
+
+// Sensor Data Types - Updated according to new API specification
 export interface SensorData {
-  id: string;
-  deviceId: string;
-  device?: Device;
-  value: number;
-  unit: string;
-  timestamp: string;
-  createdAt: string;
+  Id: number;
+  DeviceId: number;
+  Value: string;
+  TimeStamp: string;
 }
 
 export interface CreateSensorDataRequest {
-  deviceId: string | number; // Can be string or number (converted to number in API)
-  value: string | number; // Can be JSON string or number
-  unit?: string; // Optional - backend doesn't require this in request body
+  DeviceId: number;
+  Value: string;
+  TimeStamp?: string;
 }
 
 export interface SensorDataQuery {
-  deviceId: string;
-  page?: number;
-  limit?: number;
-  startDate?: string;
-  endDate?: string;
+  deviceId: number;
+  from?: string; // UTC ISO8601
+  to?: string; // UTC ISO8601
+  page?: number; // Minimum 1, default 1
+  pageSize?: number; // Maximum 1000, default 200
 }
 
 // API Response Types
@@ -496,14 +502,22 @@ export interface PaymentConfirmationResponse {
 
 // Admin Device Mapping (Provisioning)
 export interface DeviceMapping {
-  id: number;
-  deviceId: number;
+  Id: number;
+  DeviceId: number;
+  DeviceName?: string;
+  Description?: string;
+  HardwareIdentifier?: string;
+  NodeIdentifier?: string;
+  HomeKey: string;
+  CreatedAt: string;
+  // camelCase aliases for frontend convenience
+  deviceId?: number;
   deviceName?: string;
+  description?: string;
   hardwareIdentifier?: string;
   nodeIdentifier?: string;
   homeKey?: string;
-  description?: string;
-  createdAt: string;
+  createdAt?: string;
 }
 
 export interface CreateDeviceMappingRequest {

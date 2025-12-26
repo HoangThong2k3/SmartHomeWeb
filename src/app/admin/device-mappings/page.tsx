@@ -216,7 +216,7 @@ export default function DeviceMappingsPage() {
                     </tr>
                   )}
                   {filtered.map((m) => (
-                    <tr key={m.id} className="hover:bg-gray-50">
+                    <tr key={m.Id ?? m.deviceId ?? `${m.DeviceId}`} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
                         <div className="font-semibold text-gray-900 flex items-center gap-2">
                           <Cpu className="w-4 h-4 text-blue-600" />
@@ -229,11 +229,11 @@ export default function DeviceMappingsPage() {
                       <td className="px-4 py-3 text-gray-800">{m.hardwareIdentifier || "—"}</td>
                       <td className="px-4 py-3 text-gray-700 max-w-xs truncate">{m.description || "—"}</td>
                       <td className="px-4 py-3 text-gray-500">
-                        {new Date(m.createdAt).toLocaleString("vi-VN")}
+                        {new Date(m.createdAt ?? m.CreatedAt ?? Date.now()).toLocaleString("vi-VN")}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button
-                          onClick={() => handleDelete(m.id)}
+                          onClick={() => handleDelete(m.Id ?? m.deviceId ?? m.DeviceId)}
                           disabled={isSubmitting}
                           className="text-red-600 hover:text-red-800 inline-flex items-center gap-1 text-sm disabled:opacity-50"
                         >
