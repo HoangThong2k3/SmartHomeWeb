@@ -16,7 +16,7 @@ const nextConfig: NextConfig = {
       {
         source: "/api/proxy/:path*",
         destination:
-          "https://smarthomeapiv3vps.twilightparadox.com/api/:path*",
+          "https://backend.fmate.id.vn/api/:path*",
       },
     ];
   },
