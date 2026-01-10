@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Layout from "@/components/layout/Layout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { ServiceGuard } from "@/components/auth/ServiceGuard";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiService } from "@/services/api";
 import { useServiceAccess } from "@/hooks/useServiceAccess";
+import { useTimezone } from "@/hooks/useTimezone";
+import { useRealTimePolling } from "@/hooks/useRealTimePolling";
 import { Device, Home, Room, CreateSensorDataRequest, SensorData, SensorDataQuery } from "@/types";
 import {
   Thermometer,
@@ -18,7 +20,19 @@ import {
   Edit,
   RefreshCw,
   Activity,
+  ChevronDown,
+  Clock,
+  Download,
+  FileText,
+  FileJson,
 } from "lucide-react";
+import {
+  LoadingSkeleton,
+  SensorDataTableSkeleton,
+  SensorChartSkeleton,
+  SensorLatestReadingSkeleton,
+} from "@/components/ui/LoadingSkeleton";
+import { AdvancedSensorChart } from "@/components/ui/AdvancedSensorChart";
 
 export default function SensorDataPage() {
   const { user } = useAuth();
@@ -26,39 +40,66 @@ export default function SensorDataPage() {
     isActive: canUseService,
     isLoading: isServiceLoading,
   } = useServiceAccess();
-  const [sensorData, setSensorData] = useState<SensorData[]>([]);
+  const { toUTC, fromUTC, formatForDisplay, getCurrentLocalTime, userTimezone } = useTimezone();
+
+  // Filter states - Declare BEFORE useRealTimePolling to avoid temporal dead zone
+  const [selectedDevices, setSelectedDevices] = useState<number[]>([]);
+  const [selectedDevice, setSelectedDevice] = useState<number | null>(null); // Keep for backward compatibility with chart
+  const [dateRange, setDateRange] = useState({ from: "", to: "" });
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(50); // Smaller initial page size for lazy loading
+
+  // Advanced filter states
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [timeRangePreset, setTimeRangePreset] = useState<string>("");
+  const [selectedHomes, setSelectedHomes] = useState<string[]>([]);
+
+  // Real-time polling for latest sensor data - Now can safely reference selectedDevice
+  const {
+    data: realTimeLatestData,
+    isPolling: isPollingLatest,
+    lastUpdated: latestLastUpdated,
+    error: pollingError,
+    startPolling: startLatestPolling,
+    stopPolling: stopLatestPolling,
+  } = useRealTimePolling(
+    async () => {
+      if (selectedDevice) {
+        return await apiService.getLatestSensorData(selectedDevice);
+      }
+      return null;
+    },
+    {
+      interval: 30000, // 30 seconds
+      enabled: !!selectedDevice,
+      onError: (error) => {
+        console.warn("[SensorDataPage] Real-time polling error:", error.message);
+      },
+    }
+  );
+
+  // Prepare latestData state early so displayLatestData can reference it
   const [latestData, setLatestData] = useState<SensorData | null>(null);
+  // Use real-time data if available, otherwise fallback to manually fetched data
+  const displayLatestData = realTimeLatestData || latestData;
+
+  // Data states
+  const [sensorData, setSensorData] = useState<SensorData[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [homes, setHomes] = useState<Home[]>([]);
+
+  // Loading states
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingLatest, setIsLoadingLatest] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreData, setHasMoreData] = useState(true);
+
+  // UI states
   const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingSensorData, setEditingSensorData] = useState<any | null>(null);
-  const [selectedDevice, setSelectedDevice] = useState<number | null>(null);
-  const [dateRange, setDateRange] = useState({ from: "", to: "" });
-  const [page, setPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(200);
 
-  useEffect(() => {
-    if (isServiceLoading) return;
-    if (!canUseService) {
-      setIsLoading(false);
-      return;
-    }
-    fetchDevices();
-  }, [user, canUseService, isServiceLoading]);
-
-  useEffect(() => {
-    if (selectedDevice && canUseService) {
-      fetchSensorData();
-      fetchLatestSensorData();
-    } else {
-      setSensorData([]);
-      setLatestData(null);
-    }
-  }, [selectedDevice, dateRange, page, pageSize, canUseService]);
-
+  // Function definitions (must be before useEffect)
   const fetchDevices = async () => {
     try {
       setIsLoading(true);
@@ -107,60 +148,6 @@ export default function SensorDataPage() {
     }
   };
 
-  const fetchSensorData = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      console.log(
-        "[SensorDataPage] Fetching sensor data for device:",
-        selectedDevice,
-        "with query:",
-        { ...dateRange, page, pageSize }
-      );
-
-      if (selectedDevice) {
-        const query: Omit<SensorDataQuery, "deviceId"> = {};
-        if (dateRange.from) {
-          query.from = new Date(dateRange.from).toISOString();
-        }
-        if (dateRange.to) {
-          query.to = new Date(dateRange.to).toISOString();
-        }
-        if (page) query.page = page;
-        if (pageSize) query.pageSize = pageSize;
-
-        console.log("[SensorDataPage] Query params:", query);
-        const data = await apiService.getSensorData(selectedDevice, query);
-        console.log(
-          "[SensorDataPage] Received sensor data:",
-          Array.isArray(data) ? data.length : 0,
-          "records"
-        );
-        console.log("[SensorDataPage] Sample record:", data?.[0]);
-        // Normalize data to handle both PascalCase and camelCase
-        const normalizedData = Array.isArray(data)
-          ? data.map((item: any) => ({
-              Id: Number(item?.Id ?? item?.id ?? 0),
-              DeviceId: Number(item?.DeviceId ?? item?.deviceId ?? item?.device_id ?? 0),
-              Value: String(item?.Value ?? item?.value ?? ""),
-              TimeStamp: String(item?.TimeStamp ?? item?.timeStamp ?? item?.timestamp ?? item?.Timestamp ?? ""),
-            }))
-          : [];
-        setSensorData(normalizedData);
-      } else {
-        console.log("[SensorDataPage] No device selected, clearing data");
-        setSensorData([]);
-      }
-    } catch (err: any) {
-      const errorMsg =
-        err?.message || err?.detail || err?.error || "Failed to load sensor data";
-      console.error("[SensorDataPage] Error fetching sensor data:", errorMsg, err);
-      setError(errorMsg);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const fetchLatestSensorData = async () => {
     if (!selectedDevice) return;
     try {
@@ -179,6 +166,102 @@ export default function SensorDataPage() {
     }
   };
 
+  const fetchSensorData = useCallback(async (loadMore = false) => {
+    try {
+      if (loadMore) {
+        setIsLoadingMore(true);
+      } else {
+        setIsLoading(true);
+        setPage(1); // Reset to first page when not loading more
+      }
+      setError(null);
+
+      console.log(
+        "[SensorDataPage] Fetching sensor data for device:",
+        selectedDevice,
+        "with query:",
+        { ...dateRange, page: loadMore ? page + 1 : 1, pageSize }
+      );
+
+      if (selectedDevice) {
+        const query: Omit<SensorDataQuery, "deviceId"> = {};
+        if (dateRange.from) {
+          query.from = toUTC(dateRange.from); // Use timezone-aware conversion
+        }
+        if (dateRange.to) {
+          query.to = toUTC(dateRange.to); // Use timezone-aware conversion
+        }
+        query.page = loadMore ? page + 1 : 1;
+        query.pageSize = pageSize;
+
+        console.log("[SensorDataPage] Query params:", query);
+        const data = await apiService.getSensorData(selectedDevice, query);
+        console.log(
+          "[SensorDataPage] Received sensor data:",
+          Array.isArray(data) ? data.length : 0,
+          "records"
+        );
+        console.log("[SensorDataPage] Sample record:", data?.[0]);
+
+        // Normalize data to handle both PascalCase and camelCase
+        const normalizedData = Array.isArray(data)
+          ? data.map((item: any) => ({
+              Id: Number(item?.Id ?? item?.id ?? 0),
+              DeviceId: Number(item?.DeviceId ?? item?.deviceId ?? item?.device_id ?? 0),
+              Value: String(item?.Value ?? item?.value ?? ""),
+              TimeStamp: String(item?.TimeStamp ?? item?.timeStamp ?? item?.timestamp ?? item?.Timestamp ?? ""),
+            }))
+          : [];
+
+        if (loadMore) {
+          setSensorData(prev => [...prev, ...normalizedData]);
+          setPage(prev => prev + 1);
+          // Check if we got less data than requested (end of data)
+          setHasMoreData(normalizedData.length === pageSize);
+        } else {
+          setSensorData(normalizedData);
+          setPage(1);
+          setHasMoreData(normalizedData.length === pageSize);
+        }
+      } else {
+        console.log("[SensorDataPage] No device selected, clearing data");
+        setSensorData([]);
+        setHasMoreData(true);
+      }
+    } catch (err: any) {
+      const errorMsg =
+        err?.message || err?.detail || err?.error || "Failed to load sensor data";
+      console.error("[SensorDataPage] Error fetching sensor data:", errorMsg, err);
+      setError(errorMsg);
+    } finally {
+      setIsLoading(false);
+      setIsLoadingMore(false);
+    }
+  }, [selectedDevice, dateRange, page, pageSize, toUTC]);
+
+  // useEffect hooks (must be after function definitions)
+  useEffect(() => {
+    if (isServiceLoading) return;
+    if (!canUseService) {
+      setIsLoading(false);
+      return;
+    }
+    fetchDevices();
+  }, [user, canUseService, isServiceLoading]);
+
+  useEffect(() => {
+    if ((selectedDevice || selectedDevices.length > 0) && canUseService) {
+      fetchSensorData();
+      // Note: Latest sensor data fetching will be updated to handle multiple devices
+      if (selectedDevice) {
+        fetchLatestSensorData();
+      }
+    } else {
+      setSensorData([]);
+      setLatestData(null);
+    }
+  }, [selectedDevice, selectedDevices, dateRange, page, pageSize, canUseService]);
+
   const handleCreateSensorData = async (sensorDataForm: any) => {
     try {
       setError(null);
@@ -194,19 +277,19 @@ export default function SensorDataPage() {
         throw new Error("Value is required and must be a string");
       }
 
-      // Build payload
+      // Build payload with timezone-aware timestamp conversion
       const payload: CreateSensorDataRequest = {
         DeviceId: Number(sensorDataForm.deviceId),
         Value: sensorDataForm.value,
         TimeStamp: sensorDataForm.timeStamp
-          ? new Date(sensorDataForm.timeStamp).toISOString()
+          ? toUTC(sensorDataForm.timeStamp) // Convert local time to UTC
           : undefined,
       };
       console.log("[SensorDataPage] Sensor data payload:", payload);
 
       await apiService.createSensorData(payload);
       console.log("[SensorDataPage] Sensor data created successfully");
-      fetchSensorData();
+      fetchSensorData(); // Refresh data
       setShowCreateForm(false);
     } catch (err: any) {
       const errorMsg =
@@ -214,6 +297,140 @@ export default function SensorDataPage() {
       console.error("[SensorDataPage] Error creating sensor data:", errorMsg, err);
       setError(errorMsg);
     }
+  };
+
+  const handleLoadMore = () => {
+    if (!isLoadingMore && hasMoreData && selectedDevice) {
+      fetchSensorData(true);
+    }
+  };
+
+  // Export functions
+  const exportToCSV = () => {
+    if (!sensorData.length) return;
+
+    const headers = ["ID", "Device ID", "Value", "Timestamp"];
+    const csvContent = [
+      headers.join(","),
+      ...sensorData.map(row => [
+        row.Id,
+        row.DeviceId,
+        `"${row.Value.replace(/"/g, '""')}"`, // Escape quotes in CSV
+        row.TimeStamp,
+      ].join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `sensor-data-device-${selectedDevice}-${new Date().toISOString().split("T")[0]}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportToJSON = () => {
+    if (!sensorData.length) return;
+
+    const jsonContent = JSON.stringify(sensorData, null, 2);
+    const blob = new Blob([jsonContent], { type: "application/json;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `sensor-data-devices-${selectedDevices.join("-") || selectedDevice || "all"}-${new Date().toISOString().split("T")[0]}.json`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Advanced filtering functions
+  const applyTimeRangePreset = (preset: string) => {
+    const now = new Date();
+    let from = "";
+    let to = fromUTC(now.toISOString());
+
+    switch (preset) {
+      case "last_hour":
+        from = fromUTC(new Date(now.getTime() - 60 * 60 * 1000).toISOString());
+        break;
+      case "last_6_hours":
+        from = fromUTC(new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString());
+        break;
+      case "last_24_hours":
+        from = fromUTC(new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString());
+        break;
+      case "last_7_days":
+        from = fromUTC(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString());
+        break;
+      case "last_30_days":
+        from = fromUTC(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString());
+        break;
+      case "this_month":
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        from = fromUTC(startOfMonth.toISOString());
+        break;
+      case "custom":
+        // Keep existing custom range
+        return;
+      default:
+        return;
+    }
+
+    setDateRange({ from, to });
+    setTimeRangePreset(preset);
+  };
+
+  const toggleDeviceSelection = (deviceId: number) => {
+    setSelectedDevices(prev => {
+      if (prev.includes(deviceId)) {
+        return prev.filter(id => id !== deviceId);
+      } else {
+        return [...prev, deviceId];
+      }
+    });
+  };
+
+  const toggleHomeSelection = (homeId: string) => {
+    setSelectedHomes(prev => {
+      if (prev.includes(homeId)) {
+        return prev.filter(id => id !== homeId);
+      } else {
+        return [...prev, homeId];
+      }
+    });
+  };
+
+  const clearAllFilters = () => {
+    setSelectedDevices([]);
+    setSelectedDevice(null);
+    setSelectedHomes([]);
+    setDateRange({ from: "", to: "" });
+    setTimeRangePreset("");
+    setPage(1);
+  };
+
+  // Get filtered devices based on selected homes
+  const getFilteredDevices = () => {
+    if (selectedHomes.length === 0) return devices;
+    return devices.filter(device => {
+      // Find which home this device belongs to
+      for (const home of homes) {
+        if (selectedHomes.includes(home.id)) {
+          try {
+            const homeRooms = apiService.getRoomsByHome(home.id);
+            // This is async, for now just return all devices
+            // In a real implementation, you'd need to cache this data
+            return true;
+          } catch {
+            continue;
+          }
+        }
+      }
+      return false;
+    });
   };
 
   const handleUpdateSensorData = async (sensorDataForm: any) => {
@@ -275,14 +492,8 @@ export default function SensorDataPage() {
   };
 
   const formatTimestamp = (timestamp: string | null | undefined) => {
-    if (!timestamp) return "N/A";
-    try {
-      const date = new Date(timestamp);
-      if (isNaN(date.getTime())) return "Invalid Date";
-      return date.toLocaleString();
-    } catch {
-      return "Invalid Date";
-    }
+    if (!timestamp) return "";
+    return formatForDisplay(timestamp);
   };
 
   const parseSensorValue = (value: string | null | undefined) => {
@@ -329,21 +540,46 @@ export default function SensorDataPage() {
       <ServiceGuard>
         <Layout>
         <div className="mb-8">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Sensor Data</h1>
-              <p className="text-gray-600 mt-2">Monitor and manage sensor readings</p>
+            <div className="flex justify-between items-center">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Sensor Data</h1>
+                <p className="text-gray-600 mt-2">Monitor and manage sensor readings</p>
+              </div>
+              <div className="flex gap-2">
+                {/* Export buttons */}
+                {selectedDevice && sensorData.length > 0 && (
+                  <div className="flex gap-1">
+                    <button
+                      onClick={exportToCSV}
+                      className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 flex items-center text-sm"
+                      title="Export as CSV"
+                    >
+                      <FileText className="w-4 h-4 mr-1" />
+                      CSV
+                    </button>
+                    <button
+                      onClick={exportToJSON}
+                      className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 flex items-center text-sm"
+                      title="Export as JSON"
+                    >
+                      <FileJson className="w-4 h-4 mr-1" />
+                      JSON
+                    </button>
+                  </div>
+                )}
+
+                {/* Add Data button */}
+                {user?.role === "admin" && (
+                  <button
+                    onClick={() => setShowCreateForm(true)}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Data
+                  </button>
+                )}
+              </div>
             </div>
-            {user?.role === "admin" && (
-              <button
-                onClick={() => setShowCreateForm(true)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Data
-              </button>
-            )}
-          </div>
         </div>
 
         {error && (
@@ -354,18 +590,32 @@ export default function SensorDataPage() {
 
         {/* Filters */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-          <h3 className="text-lg font-semibold mb-4 flex items-center">
-            <Filter className="w-5 h-5 mr-2" />
-            Filters
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold flex items-center">
+              <Filter className="w-5 h-5 mr-2" />
+              Filters
+            </h3>
+            <button
+              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+              className="text-sm text-blue-600 hover:text-blue-800 underline"
+            >
+              {showAdvancedFilters ? "Simple Filters" : "Advanced Filters"}
+            </button>
+          </div>
+
+          {/* Basic Filters */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Device
               </label>
               <select
                 value={selectedDevice || ""}
-                onChange={(e) => setSelectedDevice(e.target.value ? Number(e.target.value) : null)}
+                onChange={(e) => {
+                  const deviceId = e.target.value ? Number(e.target.value) : null;
+                  setSelectedDevice(deviceId);
+                  setSelectedDevices(deviceId ? [deviceId] : []);
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select a device</option>
@@ -419,104 +669,213 @@ export default function SensorDataPage() {
                 min={1}
                 max={1000}
                 value={pageSize}
-                onChange={(e) => setPageSize(Number(e.target.value) || 200)}
+                onChange={(e) => setPageSize(Number(e.target.value) || 50)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
-          <div className="mt-4 flex items-center space-x-3">
-            <button
-              onClick={fetchSensorData}
-              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Apply filters
-            </button>
-            <button
-              onClick={() => {
-                setDateRange({ from: "", to: "" });
-                setPage(1);
-                setPageSize(200);
-              }}
-              className="text-sm text-gray-600 hover:text-gray-800"
-            >
-              Clear
-            </button>
+
+          {/* Time Range Presets */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Quick Time Ranges
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { key: "last_hour", label: "Last Hour" },
+                { key: "last_6_hours", label: "Last 6 Hours" },
+                { key: "last_24_hours", label: "Last 24 Hours" },
+                { key: "last_7_days", label: "Last 7 Days" },
+                { key: "last_30_days", label: "Last 30 Days" },
+                { key: "this_month", label: "This Month" },
+              ].map((preset) => (
+                <button
+                  key={preset.key}
+                  onClick={() => applyTimeRangePreset(preset.key)}
+                  className={`px-3 py-1 text-xs rounded-full transition-colors ${
+                    timeRangePreset === preset.key
+                      ? "bg-blue-100 text-blue-800 border border-blue-300"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Advanced Filters */}
+          {showAdvancedFilters && (
+            <div className="border-t border-gray-200 pt-4 mt-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Home Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Filter by Homes
+                  </label>
+                  <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-md p-2">
+                    {homes.map((home) => (
+                      <label key={home.id} className="flex items-center space-x-2 py-1">
+                        <input
+                          type="checkbox"
+                          checked={selectedHomes.includes(home.id)}
+                          onChange={() => toggleHomeSelection(home.id)}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm">{home.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Device Selection (Multiple) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Filter by Devices
+                  </label>
+                  <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-md p-2">
+                    {getFilteredDevices().map((device) => (
+                      <label key={device.DeviceId} className="flex items-center space-x-2 py-1">
+                        <input
+                          type="checkbox"
+                          checked={selectedDevices.includes(device.DeviceId)}
+                          onChange={() => toggleDeviceSelection(device.DeviceId)}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm">{device.Name} (ID: {device.DeviceId})</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="mt-4 flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={() => fetchSensorData()}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Apply filters
+              </button>
+              <button
+                onClick={clearAllFilters}
+                className="text-sm text-gray-600 hover:text-gray-800 underline"
+              >
+                Clear all
+              </button>
+            </div>
+
+            {/* Filter Summary */}
+            {(selectedDevices.length > 0 || selectedHomes.length > 0 || dateRange.from || dateRange.to) && (
+              <div className="text-sm text-gray-600">
+                Active filters: {selectedDevices.length} devices, {selectedHomes.length} homes
+                {(dateRange.from || dateRange.to) && ", custom time range"}
+              </div>
+            )}
           </div>
         </div>
 
         {/* Latest reading */}
         {selectedDevice && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
-            <div className="flex items-center justify-between mb-3">
+          isLoadingLatest ? (
+            <SensorLatestReadingSkeleton />
+          ) : (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+              <div className="flex items-center justify-between mb-3">
               <div>
                 <p className="text-sm text-gray-500">Latest reading</p>
                 <p className="text-lg font-semibold text-gray-900">
                   Device ID: {selectedDevice}
                 </p>
+                <div className="text-xs text-gray-400 mt-1 space-y-1">
+                  <div className="flex items-center">
+                    <Clock className="w-3 h-3 mr-1" />
+                    Timezone: {userTimezone || "Loading..."}
+                  </div>
+                  {isPollingLatest && (
+                    <div className="flex items-center text-green-600">
+                      <div className="w-2 h-2 bg-green-500 rounded-full mr-1 animate-pulse"></div>
+                      Live updates active
+                      {latestLastUpdated && (
+                        <span className="ml-1">
+                          (last: {latestLastUpdated.toLocaleTimeString()})
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-              {isLoadingLatest && (
+              {isLoadingLatest && !isPollingLatest && (
                 <div className="flex items-center text-sm text-gray-500">
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
                   Loading...
                 </div>
               )}
-            </div>
-            {latestData ? (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                  <p className="text-xs text-gray-500">Value</p>
-                  <pre className="text-xs bg-white rounded p-2 border overflow-x-auto whitespace-pre-wrap">
-                    {latestData.Value}
-                  </pre>
-                </div>
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                  <p className="text-xs text-gray-500">Timestamp</p>
-                  <p className="text-sm font-medium text-gray-900">
-                    {formatTimestamp(latestData?.TimeStamp)}
-                  </p>
-                </div>
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                  <p className="text-xs text-gray-500">Record ID</p>
-                  <p className="text-sm font-medium text-gray-900">
-                    {latestData.Id}
-                  </p>
-                </div>
               </div>
-            ) : (
-              <p className="text-sm text-gray-500">
-                {isLoadingLatest ? "Đang tải dữ liệu..." : "Chưa có bản ghi mới nhất cho thiết bị này."}
-              </p>
-            )}
-          </div>
+              {displayLatestData ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                    <p className="text-xs text-gray-500">Value</p>
+                    <pre className="text-xs bg-white rounded p-2 border overflow-x-auto whitespace-pre-wrap">
+                      {displayLatestData.Value}
+                    </pre>
+                  </div>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                    <p className="text-xs text-gray-500">Timestamp</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {formatTimestamp(displayLatestData?.TimeStamp)}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                    <p className="text-xs text-gray-500">Record ID</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {displayLatestData.Id}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">
+                  {isLoadingLatest ? "Đang tải dữ liệu..." : "Chưa có bản ghi mới nhất cho thiết bị này."}
+                </p>
+              )}
+            </div>
+          )
         )}
 
         {/* Simple trend chart */}
         {selectedDevice && sensorData.length > 0 && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Activity className="w-4 h-4 text-blue-600" />
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">Sensor trend</p>
-                  <p className="text-xs text-gray-500">
-                    Giá trị gần nhất của {Math.min(sensorData.length, 30)} bản ghi
-                  </p>
+          isLoading ? (
+            <SensorChartSkeleton />
+          ) : (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-blue-600" />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">Sensor trend</p>
+                    <p className="text-xs text-gray-500">
+                      Giá trị gần nhất của {Math.min(sensorData.length, 30)} bản ghi
+                    </p>
+                  </div>
                 </div>
               </div>
+              <AdvancedSensorChart
+                data={sensorData}
+                parseValue={parseSensorValue}
+                extractNumeric={extractNumericForChart}
+                deviceId={selectedDevice || undefined}
+                deviceName={devices.find(d => d.DeviceId === selectedDevice)?.Name}
+              />
             </div>
-            <SensorMiniChart
-              data={sensorData}
-              parseValue={parseSensorValue}
-              extractNumeric={extractNumericForChart}
-            />
-          </div>
+          )
         )}
 
         {isLoading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
+          <SensorDataTableSkeleton />
         ) : sensorData.length === 0 ? (
           <div className="text-center py-12">
             <Thermometer className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -538,8 +897,19 @@ export default function SensorDataPage() {
         ) : (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold">Sensor Readings</h3>
-              <p className="text-sm text-gray-500">{sensorData.length} records found</p>
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-lg font-semibold">Sensor Readings</h3>
+                  <p className="text-sm text-gray-500">
+                    {sensorData.length} records found
+                    {hasMoreData && selectedDevice && " (showing first page)"}
+                  </p>
+                </div>
+                <div className="text-xs text-gray-400 flex items-center">
+                  <Clock className="w-3 h-3 mr-1" />
+                  {userTimezone}
+                </div>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
@@ -557,20 +927,17 @@ export default function SensorDataPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Timestamp
                     </th>
+                    {user?.role === "admin" && (
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {sensorData.map((rawItem, index) => {
                     const item = normalizeSensorData(rawItem);
                     const parsedValue = parseSensorValue(item.value);
-                    const temp =
-                      typeof (parsedValue as any)?.temperature === "number"
-                        ? (parsedValue as any).temperature
-                        : null;
-                    const hum =
-                      typeof (parsedValue as any)?.humidity === "number"
-                        ? (parsedValue as any).humidity
-                        : null;
                     return (
                       <tr key={item.id || `${item.deviceId}-${item.timeStamp}-${index}`} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -579,9 +946,9 @@ export default function SensorDataPage() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {item.deviceId || "N/A"}
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-900">
-                          <div className="max-w-md">
-                            <pre className="text-xs bg-gray-100 p-2 rounded overflow-x-auto whitespace-pre-wrap">
+                        <td className="px-6 py-4 text-sm text-gray-900 max-w-md">
+                          <div className="truncate" title={item.value}>
+                            <pre className="text-xs bg-gray-100 p-2 rounded overflow-hidden whitespace-nowrap text-ellipsis max-w-xs">
                               {item.value}
                             </pre>
                           </div>
@@ -589,30 +956,55 @@ export default function SensorDataPage() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {formatTimestamp(item.timeStamp)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => setEditingSensorData(item)}
-                              className="text-blue-600 hover:text-blue-800"
-                              title="Edit"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteSensorData(item.id)}
-                              className="text-red-600 hover:text-red-800"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
+                        {user?.role === "admin" && (
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => setEditingSensorData(item)}
+                                className="text-blue-600 hover:text-blue-800 transition-colors"
+                                title="Edit"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteSensorData(item.id)}
+                                className="text-red-600 hover:text-red-800 transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
+
+            {/* Load More Button */}
+            {hasMoreData && selectedDevice && sensorData.length > 0 && (
+              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+                <button
+                  onClick={handleLoadMore}
+                  disabled={isLoadingMore}
+                  className="w-full flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isLoadingMore ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Loading more...
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-4 h-4 mr-2" />
+                      Load more records
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -647,8 +1039,8 @@ function CreateSensorDataForm({
   onSubmit: (data: any) => void;
   onCancel: () => void;
 }) {
-  // Initialize with empty timestamp to avoid hydration mismatch
-  // Set it in useEffect after mount (client-side only)
+  const { getCurrentLocalTime, userTimezone } = useTimezone();
+
   const [formData, setFormData] = useState({
     deviceId: "",
     value: "",
@@ -659,9 +1051,9 @@ function CreateSensorDataForm({
   useEffect(() => {
     setFormData(prev => ({
       ...prev,
-      timeStamp: new Date().toISOString().slice(0, 16),
+      timeStamp: getCurrentLocalTime(), // Use timezone-aware current time
     }));
-  }, []);
+  }, [getCurrentLocalTime]);
 
   const loadExample = (type: "temperature" | "humidity" | "motion" | "text") => {
     const examples = {
@@ -861,6 +1253,8 @@ function EditSensorDataForm({
   onSubmit: (data: any) => void;
   onCancel: () => void;
 }) {
+  const { fromUTC, userTimezone } = useTimezone();
+
   // Normalize sensor data first
   const normalizedData = {
     id: sensorData?.id ?? sensorData?.Id ?? "",
@@ -883,7 +1277,7 @@ function EditSensorDataForm({
     deviceId: String(normalizedData.deviceId || ""),
     value: formattedValue,
     timeStamp: normalizedData.timeStamp
-      ? new Date(normalizedData.timeStamp).toISOString().slice(0, 16)
+      ? fromUTC(normalizedData.timeStamp) // Convert UTC to local datetime-local format
       : "",
   });
 
@@ -892,7 +1286,7 @@ function EditSensorDataForm({
     if (!formData.timeStamp) {
       setFormData(prev => ({
         ...prev,
-        timeStamp: new Date().toISOString().slice(0, 16),
+        timeStamp: new Date().toISOString().slice(0, 16), // Fallback to current time in UTC format for datetime-local
       }));
     }
   }, [formData.timeStamp]);
@@ -969,7 +1363,7 @@ function EditSensorDataForm({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Timestamp
+              Timestamp <span className="text-xs text-gray-500">({userTimezone})</span>
             </label>
             <input
               type="datetime-local"
@@ -977,6 +1371,9 @@ function EditSensorDataForm({
               onChange={(e) => setFormData({ ...formData, timeStamp: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Time will be stored in UTC and displayed in your local timezone
+            </p>
           </div>
 
           <div className="flex space-x-3 pt-4">

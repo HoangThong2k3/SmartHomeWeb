@@ -1806,12 +1806,33 @@ class ApiService {
         body: JSON.stringify(payload),
       });
       console.log("[API] createSensorData - response:", result);
-      return {
-        Id: result?.Id ?? result?.id ?? 0,
-        DeviceId: result?.DeviceId ?? result?.deviceId ?? sensorData.DeviceId,
-        Value: result?.Value ?? result?.value ?? sensorData.Value,
-        TimeStamp: result?.TimeStamp ?? result?.timeStamp ?? new Date().toISOString(),
-      };
+
+      // If backend returns the created object (201 with body), use it directly
+      if (result && (result.Id || result.id)) {
+        return {
+          Id: result?.Id ?? result?.id ?? 0,
+          DeviceId: result?.DeviceId ?? result?.deviceId ?? sensorData.DeviceId,
+          Value: result?.Value ?? result?.value ?? sensorData.Value,
+          TimeStamp: result?.TimeStamp ?? result?.timeStamp ?? new Date().toISOString(),
+        };
+      }
+
+      // Fallback: if backend returns 201 without body, fetch the latest sensor data for this device
+      console.log("[API] createSensorData - backend returned no body, fetching latest sensor data as fallback");
+      try {
+        const latest = await this.getLatestSensorData(sensorData.DeviceId);
+        console.log("[API] createSensorData - fallback latest data:", latest);
+        return latest;
+      } catch (fallbackError: any) {
+        console.warn("[API] createSensorData - fallback failed:", fallbackError?.message || fallbackError);
+        // Return a synthetic response if all else fails
+        return {
+          Id: 0, // Will be set by backend
+          DeviceId: sensorData.DeviceId,
+          Value: sensorData.Value,
+          TimeStamp: sensorData.TimeStamp || new Date().toISOString(),
+        };
+      }
     } catch (error: any) {
       console.error("[API] createSensorData - error:", error?.message || error);
       throw error;

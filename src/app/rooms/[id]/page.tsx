@@ -317,7 +317,7 @@ export default function RoomDetailPage() {
             </div>
 
             {/* Biểu đồ nhiệt độ/độ ẩm (Mock) */}
-            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+            <div className="bg-[color:var(--surface)] rounded-lg p-6 mb-6 card-shadow">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
                 Dữ liệu cảm biến
               </h2>
@@ -384,7 +384,7 @@ export default function RoomDetailPage() {
             </div>
 
             {/* Thiết bị trong phòng (danh sách đầy đủ, chi tiết bật/tắt) */}
-            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+            <div className="bg-[color:var(--surface)] rounded-lg p-6 mb-6 card-shadow">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Thiết bị trong phòng</h2>
               {devices.length === 0 ? (
                 <p className="text-sm text-gray-500">Chưa có thiết bị trong phòng này.</p>
@@ -398,7 +398,7 @@ export default function RoomDetailPage() {
                     const devType = String(device.type || device.DeviceType || "").replace("_", " ");
                     const isOnline = String(device.status || device.currentState || "").toLowerCase() === "online";
                     return (
-                      <div key={id || device.name} className="border rounded-lg p-4 bg-white shadow-sm">
+                      <div key={id || device.name} className="border rounded-lg p-4 bg-[color:var(--surface)] card-shadow">
                         <div className="flex items-start justify-between">
                           <div className="flex items-start gap-4">
                             <div className={`h-10 w-10 rounded-md flex items-center justify-center ${isOnline ? "bg-emerald-50" : "bg-gray-50"}`}>
@@ -416,13 +416,13 @@ export default function RoomDetailPage() {
                           <div className="flex items-center space-x-2">
                             <button
                               onClick={() => toggleDeviceDetails(device)}
-                              className="px-3 py-1 rounded-md text-sm bg-gray-100 hover:bg-gray-200"
+                              className="btn btn-ghost px-3 py-1 text-sm"
                             >
                               {isExpanded ? "Ẩn chi tiết" : "Xem chi tiết"}
                             </button>
                             <button
                               onClick={() => router.push(`/devices/${id}`)}
-                              className="px-3 py-1 rounded-md text-sm text-blue-600 hover:underline"
+                              className="btn btn-ghost px-3 py-1 text-sm"
                             >
                               Mở
                             </button>
@@ -461,7 +461,7 @@ export default function RoomDetailPage() {
             </div>
 
             {/* Danh sách thiết bị điều khiển */}
-            <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="bg-[color:var(--surface)] rounded-lg p-6 card-shadow">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
                 Điều khiển thiết bị
               </h2>
@@ -510,14 +510,14 @@ export default function RoomDetailPage() {
                               <>
                                 <button
                                   onClick={() => handleDeviceControl(id, "open")}
-                                  className={`p-2 rounded-md transition-colors ${isOn ? "bg-green-600 text-white" : "bg-gray-200 text-gray-700"}`}
+                                  className={`btn ${isOn ? "btn-primary" : "btn-ghost"} p-2`}
                                   title="Open"
                                 >
                                   <DoorOpen className="h-5 w-5" />
                                 </button>
                                 <button
                                   onClick={() => handleDeviceControl(id, "close")}
-                                  className={`p-2 rounded-md transition-colors ${!isOn ? "bg-red-600 text-white" : "bg-gray-200 text-gray-700"}`}
+                                  className={`btn ${!isOn ? "btn-primary" : "btn-ghost"} p-2`}
                                   title="Close"
                                 >
                                   <DoorClosed className="h-5 w-5" />
@@ -529,7 +529,7 @@ export default function RoomDetailPage() {
                                 onClick={() =>
                                   handleDeviceControl(id, isOn ? "off" : "on")
                                 }
-                                className={`px-4 py-2 rounded-md font-medium transition-colors flex items-center space-x-2 ${isOn ? "bg-yellow-500 text-white" : "bg-gray-200 text-gray-800 hover:bg-gray-300"}`}
+                                className={`btn ${isOn ? "btn-primary" : "btn-ghost"} px-4 py-2 font-medium flex items-center space-x-2`}
                               >
                                 {isOn ? (
                                   <>
@@ -557,7 +557,7 @@ export default function RoomDetailPage() {
             <div className="mt-6">
               <button
                 onClick={() => router.push(`/sensor-data?roomId=${roomId}`)}
-                className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-medium flex items-center justify-center"
+                className="btn btn-primary w-full px-6 py-3 flex items-center justify-center"
               >
                 <Eye className="h-5 w-5 mr-2" />
                 Xem Lịch sử Dữ liệu Cảm biến

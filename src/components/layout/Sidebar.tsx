@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import React, { useEffect, useState } from "react";
+import { apiService } from "@/services/api";
 import {
   Home,
   Settings,
@@ -10,6 +12,7 @@ import {
   Cpu,
   Building2,
   DoorOpen,
+  Palette,
   Zap,
   Thermometer,
   Activity,
@@ -23,6 +26,32 @@ import {
 export default function Sidebar() {
   const pathname = usePathname();
   const { user } = useAuth();
+  const [scenesCount, setScenesCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchScenesCount = async () => {
+      try {
+        const homes = await apiService.getMyHomes();
+        let total = 0;
+        for (const h of homes) {
+          try {
+            const scenes = await apiService.getScenesByHome(Number(h.id));
+            total += (scenes || []).length;
+          } catch (e) {
+            // ignore per-home errors
+          }
+        }
+        if (mounted) setScenesCount(total);
+      } catch (e) {
+        if (mounted) setScenesCount(null);
+      }
+    };
+    fetchScenesCount();
+    return () => {
+      mounted = false;
+    };
+  }, [user]);
 
   // Chọn đích đến phù hợp thay vì quay lại landing (có form đăng nhập)
   const logoHref =
@@ -40,6 +69,7 @@ export default function Sidebar() {
       { name: "Rooms", href: "/rooms", icon: DoorOpen },
       { name: "Devices", href: "/devices", icon: Cpu },
       { name: "Automations", href: "/automations", icon: Zap },
+      { name: "Scenes", href: "/scenes", icon: Palette },
       { name: "Sensor Data", href: "/sensor-data", icon: Thermometer },
       { name: "Payments", href: "/payments", icon: CreditCard },
     ];
@@ -76,7 +106,7 @@ export default function Sidebar() {
   const menuItems = getMenuItems();
 
   return (
-    <div className="w-64 bg-white shadow-lg h-full flex flex-col">
+    <div className="w-64 bg-[color:var(--surface)] card-shadow h-full flex flex-col">
       {/* Logo */}
       <div className="p-4 border-b border-gray-200 flex-shrink-0">
         <Link href={logoHref} className="block" prefetch={false}>
@@ -98,12 +128,17 @@ export default function Sidebar() {
                   href={item.href}
                   className={`flex items-center p-3 rounded-lg transition-colors ${
                     isActive
-                      ? "bg-blue-100 text-blue-600 border-r-2 border-blue-600"
-                      : "hover:bg-gray-50 hover:text-gray-700"
+                      ? "bg-[color:var(--primary)]/10 text-[color:var(--primary)] border-r-2 border-[color:var(--primary)]"
+                      : "hover:bg-[color:var(--glass)] hover:text-[color:var(--foreground)]"
                   }`}
                 >
                   <Icon className="w-5 h-5 mr-3" />
-                  <span className="font-medium">{item.name}</span>
+                  <span className="font-medium flex items-center gap-2">
+                    {item.name}
+                    {item.href === "/scenes" && scenesCount !== null && (
+                      <span className="badge" title={`${scenesCount} scenes`}>{scenesCount}</span>
+                    )}
+                  </span>
                 </Link>
               </li>
             );

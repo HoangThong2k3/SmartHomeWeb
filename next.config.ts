@@ -16,7 +16,7 @@ const nextConfig: NextConfig = {
       {
         source: "/api/proxy/:path*",
         destination:
-          "https://smarthomes-fdbehwcuaaexxaggv.eastasia-01.azurewebsites.net/api/:path*",
+          "https://smarthomeapiv3vps.twilightparadox.com/api/:path*",
       },
     ];
   },

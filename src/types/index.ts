@@ -251,9 +251,11 @@ export interface ToggleAutomationRequest {
 }
 
 // Scene Types - According to new API specification
+export type ActionType = "TURN_ON" | "TURN_OFF" | "SET_BRIGHTNESS" | "SET_TEMPERATURE" | "SET_HUMIDITY" | "LOCK" | "UNLOCK" | "ACTIVATE" | "DEACTIVATE";
+
 export interface SceneAction {
   DeviceId: number;
-  ActionType: string;
+  ActionType: ActionType;
   ActionValue: string;
 }
 

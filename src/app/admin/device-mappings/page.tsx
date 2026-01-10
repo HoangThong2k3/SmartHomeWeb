@@ -30,6 +30,8 @@ export default function DeviceMappingsPage() {
     NodeId: "",
     Description: "",
   });
+  const [formErrors, setFormErrors] = useState<{ DeviceId?: string; HomeKey?: string; NodeId?: string }>({});
+  const [deleteTarget, setDeleteTarget] = useState<DeviceMapping | null>(null);
 
   const filtered = useMemo(() => {
     const term = search.toLowerCase();
@@ -76,9 +78,18 @@ export default function DeviceMappingsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.DeviceId || !formData.HomeKey || !formData.NodeId) {
-      setError("Vui lòng nhập đầy đủ DeviceId, HomeKey, NodeId.");
-      setTimeout(() => setError(null), 4000);
+    const errors: { DeviceId?: string; HomeKey?: string; NodeId?: string } = {};
+    if (!formData.DeviceId || Number.isNaN(Number(formData.DeviceId)) || Number(formData.DeviceId) <= 0) {
+      errors.DeviceId = "DeviceId phải là số nguyên dương.";
+    }
+    if (!formData.HomeKey || formData.HomeKey.trim().length === 0) {
+      errors.HomeKey = "HomeKey không được để trống.";
+    }
+    if (!formData.NodeId || formData.NodeId.trim().length === 0) {
+      errors.NodeId = "NodeId không được để trống.";
+    }
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) {
       return;
     }
     try {
@@ -107,14 +118,27 @@ export default function DeviceMappingsPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Bạn chắc chắn muốn hủy ghép đôi thiết bị này?")) return;
+    // Open confirm modal instead of browser confirm
+    const target = mappings.find((m) => (m.Id ?? m.deviceId ?? m.DeviceId) === id);
+    if (!target) {
+      setError("Không tìm thấy mapping để xóa.");
+      setTimeout(() => setError(null), 4000);
+      return;
+    }
+    setDeleteTarget(target);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const id = deleteTarget.Id ?? deleteTarget.deviceId ?? deleteTarget.DeviceId;
     try {
       setIsSubmitting(true);
       setError(null);
       setSuccess(null);
       await apiService.deleteDeviceMapping(id);
       setSuccess("Đã hủy ghép đôi thành công.");
-      loadData();
+      setDeleteTarget(null);
+      await loadData();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(parseError(err, "Không thể hủy ghép đôi thiết bị."));
@@ -275,6 +299,7 @@ export default function DeviceMappingsPage() {
                     className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     required
                   />
+                  {formErrors.DeviceId && <p className="text-xs text-red-600 mt-1">{formErrors.DeviceId}</p>}
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-700">HomeKey *</label>
@@ -284,6 +309,7 @@ export default function DeviceMappingsPage() {
                     className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     required
                   />
+                  {formErrors.HomeKey && <p className="text-xs text-red-600 mt-1">{formErrors.HomeKey}</p>}
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-700">NodeId *</label>
@@ -293,6 +319,7 @@ export default function DeviceMappingsPage() {
                     className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     required
                   />
+                  {formErrors.NodeId && <p className="text-xs text-red-600 mt-1">{formErrors.NodeId}</p>}
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-700">Mô tả</label>
@@ -325,8 +352,61 @@ export default function DeviceMappingsPage() {
             </div>
           </div>
         )}
+        {deleteTarget && (
+          <DeleteConfirmModal
+            target={deleteTarget}
+            onCancel={() => setDeleteTarget(null)}
+            onConfirm={confirmDelete}
+            loading={isSubmitting}
+          />
+        )}
       </Layout>
     </ProtectedRoute>
+  );
+}
+
+// Delete confirm modal
+// Rendered outside main table when deleteTarget is set
+function DeleteConfirmModal({
+  target,
+  onCancel,
+  onConfirm,
+  loading,
+}: {
+  target: DeviceMapping | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+  loading: boolean;
+}) {
+  if (!target) return null;
+  const label = target.deviceName || target.DeviceName || `Device #${target.deviceId ?? target.DeviceId}`;
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+        <div>
+          <h3 className="text-lg font-bold text-gray-900">Xác nhận hủy ghép đôi</h3>
+          <p className="text-sm text-gray-600 mt-2">
+            Bạn chắc chắn muốn hủy ghép đôi thiết bị <span className="font-medium">{label}</span>? Hành động này không thể hoàn tác.
+          </p>
+        </div>
+        <div className="flex items-center justify-end gap-2 pt-4">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
+            disabled={loading}
+          >
+            Hủy
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {loading ? "Đang xóa..." : "Xác nhận xóa"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
