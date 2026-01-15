@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { apiService } from "@/services/api";
 import { useAuth } from "@/contexts/AuthContext";
 
-type ServiceStatusState = "loading" | "no-service" | "installing" | "active" | "unknown";
+type ServiceStatusState = "loading" | "no-service" | "installing" | "active" | "inactive" | "unknown";
 
 export function useServiceAccess() {
   const { user, refreshUser } = useAuth();
@@ -38,29 +38,27 @@ export function useServiceAccess() {
       
       const data = await apiService.getCurrentUser();
       setServiceUser(data);
-      const serviceStatus = data?.serviceStatus || "";
+      const serviceStatus = (data?.serviceStatus || "")?.toString() || "";
 
       // Mark as loaded
       hasLoadedRef.current = (userId ?? null) as string | number | null;
 
-      if (
-        !serviceStatus ||
-        serviceStatus === "Chưa có dịch vụ" ||
-        serviceStatus.includes("Chưa")
-      ) {
+      // Normalize common status values to internal state
+      const upper = serviceStatus.toUpperCase();
+      if (!serviceStatus || upper === "CHƯA CÓ DỊCH VỤ" || upper.includes("CHƯA") || upper === "INACTIVE" || upper === "SUSPENDED") {
         setStatus("no-service");
         return;
       }
-
-      if (
-        serviceStatus === "Đang cài đặt" ||
-        serviceStatus.includes("Đang cài đặt")
-      ) {
+      if (upper === "INSTALLING" || upper.includes("ĐANG CÀI ĐẶT") || upper.includes("ĐANG")) {
         setStatus("installing");
         return;
       }
-
-      setStatus("active");
+      if (upper === "ACTIVE" || upper.includes("HOÀN TẤT") || upper.includes("HOẠT ĐỘNG")) {
+        setStatus("active");
+        return;
+      }
+      // fallback
+      setStatus("unknown");
     } catch (error) {
       console.warn("[useServiceAccess] Failed to load service status:", error);
       setStatus("no-service");

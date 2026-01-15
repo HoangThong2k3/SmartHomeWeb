@@ -1114,6 +1114,19 @@ class ApiService {
       body: JSON.stringify(payload),
     });
   }
+  /**
+   * New explicit method per API spec: update user service status.
+   * Keeps same behavior as toggleUserStatus but uses clearer name.
+   */
+  async updateUserStatus(id: string, serviceStatus: string): Promise<void> {
+    const payload = {
+      serviceStatus: serviceStatus,
+    };
+    await this.request<void>(`/Users/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  }
 
   async deleteUser(id: string): Promise<void> {
     return this.request<void>(`/Users/${id}`, {
@@ -2118,6 +2131,7 @@ class ApiService {
           1: "PAID",
           2: "FAILED",
           3: "CANCELLED",
+          4: "SUCCESS",
         };
         status = statusMap[api.Status] || api.Status;
       } else {

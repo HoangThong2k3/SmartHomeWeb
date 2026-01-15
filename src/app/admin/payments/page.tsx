@@ -105,7 +105,7 @@ export default function AdminPaymentsPage() {
       statusStr = status.toUpperCase();
     }
 
-    const statusMap: Record<string, { color: string; icon: any; text: string }> = {
+      const statusMap: Record<string, { color: string; icon: any; text: string }> = {
       PAID: {
         color: "bg-green-100 text-green-800",
         icon: CheckCircle,
@@ -116,6 +116,11 @@ export default function AdminPaymentsPage() {
         icon: Clock,
         text: "Đang chờ",
       },
+        SUCCESS: {
+          color: "bg-green-100 text-green-800",
+          icon: CheckCircle,
+          text: "Hoàn tất",
+        },
       FAILED: {
         color: "bg-red-100 text-red-800",
         icon: XCircle,

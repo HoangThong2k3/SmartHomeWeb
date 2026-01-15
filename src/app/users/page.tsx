@@ -70,46 +70,58 @@ export default function UsersPage() {
   };
 
   const handleToggleUserStatus = async (id: string, targetStatus: string) => {
-    const action =
-      targetStatus.toUpperCase() === "SUSPENDED" ? "suspend" : "activate";
+    const normalized = targetStatus?.toString().toUpperCase();
+    const action = normalized === "INACTIVE" ? "deactivate" : "update status";
     if (!confirm(`Are you sure you want to ${action} this user?`)) return;
 
     try {
       // Lấy thông tin user trước khi activate
-      const targetUser = users.find(u => u.id === id);
-      const isActivating = targetStatus.toUpperCase() === "ACTIVE";
+      const targetUser = users.find((u) => u.id === id);
+      const isActivating = normalized === "ACTIVE";
       const isCustomer = targetUser?.role === "customer";
-      
-      await apiService.toggleUserStatus(id, targetStatus);
-      
+
+      // Call new API to update status
+      await apiService.updateUserStatus(id, targetStatus);
+
       // Nếu activate service cho customer, tự động tạo home nếu chưa có
       if (isActivating && isCustomer) {
         try {
           // Kiểm tra xem user đã có home chưa
           const userHomes = await apiService.getHomesByOwner(id);
-          
+
           // Nếu chưa có home, tạo home mặc định
           if (!userHomes || userHomes.length === 0) {
-            const homeName = targetUser?.name ? `Nhà của ${targetUser.name}` : "Ngôi nhà của tôi";
-            
+            const homeName = targetUser?.name
+              ? `Nhà của ${targetUser.name}`
+              : "Ngôi nhà của tôi";
+
             await apiService.createHome({
               name: homeName,
               ownerId: id,
               securityStatus: "DISARMED",
             });
-            
-            console.log(`[UsersPage] Created default home for user ${id} (${targetUser?.name || targetUser?.email})`);
+
+            console.log(
+              `[UsersPage] Created default home for user ${id} (${targetUser?.name || targetUser?.email})`
+            );
           } else {
-            console.log(`[UsersPage] User ${id} already has ${userHomes.length} home(s)`);
+            console.log(
+              `[UsersPage] User ${id} already has ${userHomes.length} home(s)`
+            );
           }
         } catch (homeErr: any) {
           // Nếu không tạo được home, chỉ log warning, không block activate service
-          console.warn(`[UsersPage] Failed to create home for user ${id}:`, homeErr);
+          console.warn(
+            `[UsersPage] Failed to create home for user ${id}:`,
+            homeErr
+          );
           // Hiển thị warning nhưng không block activate service
-          alert(`Đã kích hoạt dịch vụ cho user, nhưng không thể tạo home tự động. Vui lòng tạo home thủ công cho user này.`);
+          alert(
+            `Đã cập nhật trạng thái dịch vụ cho user, nhưng không thể tạo home tự động. Vui lòng tạo home thủ công cho user này.`
+          );
         }
       }
-      
+
       await fetchUsers(); // Refresh list
     } catch (err: any) {
       setError(err.message || `Failed to ${action} user`);
@@ -294,7 +306,7 @@ export default function UsersPage() {
                           >
                             <Edit className="w-4 h-4" />
                           </button>
-                          {user.serviceStatus?.toUpperCase() === "SUSPENDED" ? (
+                          {user.serviceStatus?.toUpperCase() === "INACTIVE" ? (
                             <button
                               onClick={() => handleToggleUserStatus(user.id, "ACTIVE")}
                               className="text-green-600 hover:text-green-800"
@@ -304,9 +316,9 @@ export default function UsersPage() {
                             </button>
                           ) : (
                             <button
-                              onClick={() => handleToggleUserStatus(user.id, "SUSPENDED")}
+                              onClick={() => handleToggleUserStatus(user.id, "INACTIVE")}
                               className="text-orange-600 hover:text-orange-800"
-                              title="Suspend user"
+                              title="Deactivate user"
                             >
                               <Ban className="w-4 h-4" />
                             </button>
@@ -557,10 +569,10 @@ function EditUserForm({ user, onSubmit, onCancel }: { user: User; onSubmit: (dat
               onChange={(e) => setFormData({ ...formData, serviceStatus: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="ACTIVE">ACTIVE</option>
-              <option value="SUSPENDED">SUSPENDED</option>
-              <option value="EXPIRED">EXPIRED</option>
+              <option value="INACTIVE">INACTIVE</option>
               <option value="INSTALLING">INSTALLING</option>
+              <option value="ACTIVE">ACTIVE</option>
+              <option value="EXPIRED">EXPIRED</option>
             </select>
           </div>
           <div>

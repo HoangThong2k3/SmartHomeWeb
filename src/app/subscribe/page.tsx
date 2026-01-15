@@ -43,9 +43,12 @@ export default function SubscribePage() {
           const serviceStatus = userData?.serviceStatus;
           
           // Nếu đã có dịch vụ active hoặc đang cài đặt, redirect về dashboard
-          if (serviceStatus === "Hoàn tất" || serviceStatus === "ACTIVE" || 
-              (serviceStatus && serviceStatus !== "Chưa có dịch vụ" && 
-               !serviceStatus.includes("Chưa"))) {
+          // NOTE: Don't redirect for INACTIVE (newly registered) - keep user on subscribe page.
+          const upper = (serviceStatus || "").toString().toUpperCase();
+          const isActive = upper === "ACTIVE" || upper.includes("HOÀN TẤT") || upper.includes("HOẠT ĐỘNG");
+          const isInstalling =
+            upper === "INSTALLING" || upper.includes("ĐANG CÀI ĐẶT") || upper.includes("ĐANG");
+          if (isActive || isInstalling) {
             router.push("/user-dashboard");
             return;
           }
@@ -160,9 +163,11 @@ export default function SubscribePage() {
 
   // Kiểm tra nếu user đã có dịch vụ active hoặc đang cài đặt
   const serviceStatus = currentUser?.serviceStatus;
-  const hasActiveService = serviceStatus === "Hoàn tất" || serviceStatus === "ACTIVE" || 
-    (serviceStatus && serviceStatus !== "Chưa có dịch vụ" && !serviceStatus.includes("Chưa"));
-  const isInstalling = serviceStatus === "Đang cài đặt" || serviceStatus?.includes("Đang cài đặt");
+  const upperStatus = (serviceStatus || "").toString().toUpperCase();
+  const hasActiveService =
+    upperStatus === "ACTIVE" || upperStatus.includes("HOÀN TẤT") || upperStatus.includes("HOẠT ĐỘNG");
+  const isInstalling =
+    upperStatus === "INSTALLING" || upperStatus.includes("ĐANG CÀI ĐẶT") || upperStatus.includes("ĐANG");
 
   // Nếu đã có dịch vụ active hoặc đang cài đặt, hiển thị thông báo và redirect
   if (hasActiveService || isInstalling) {

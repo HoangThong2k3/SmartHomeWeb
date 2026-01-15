@@ -59,7 +59,9 @@ export interface User {
   email: string;
   role: "admin" | "customer";
   phoneNumber?: string;
-  serviceStatus?: string; // ACTIVE, SUSPENDED, EXPIRED, etc.
+  // Standardized service statuses per new API spec:
+  // "INACTIVE" | "INSTALLING" | "ACTIVE" | "EXPIRED"
+  serviceStatus?: "INACTIVE" | "INSTALLING" | "ACTIVE" | "EXPIRED" | string;
   serviceExpiryDate?: string; // ISO string
   address?: string;
   currentPackageId?: number;
@@ -83,7 +85,7 @@ export interface UpdateUserRequest {
   email?: string;
   role?: "admin" | "customer";
   phoneNumber?: string;
-  serviceStatus?: string;
+  serviceStatus?: "INACTIVE" | "INSTALLING" | "ACTIVE" | "EXPIRED" | string;
   serviceExpiryDate?: string;
   address?: string;
   currentPackageId?: number;
@@ -461,7 +463,8 @@ export interface PaymentLinkResponse {
 }
 
 // Status can be number (enum) or string from backend
-export type PaymentStatus = "PENDING" | "PAID" | "FAILED" | "CANCELLED" | number;
+// Status can be number (enum) or string from backend
+export type PaymentStatus = "PENDING" | "PAID" | "SUCCESS" | "FAILED" | "CANCELLED" | number;
 
 export interface ServicePayment {
   paymentId: number; // From PaymentId
