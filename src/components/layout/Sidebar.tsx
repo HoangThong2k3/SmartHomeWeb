@@ -31,6 +31,12 @@ export default function Sidebar() {
   useEffect(() => {
     let mounted = true;
     const fetchScenesCount = async () => {
+      // Nếu user hiện tại là admin, không gọi endpoint customer-only `/Homes/my-homes`
+      // để tránh backend trả 403 (permission) và log lỗi thừa trong console.
+      if ((user?.role || "").toLowerCase() === "admin") {
+        if (mounted) setScenesCount(null);
+        return;
+      }
       try {
         const homes = await apiService.getMyHomes();
         let total = 0;

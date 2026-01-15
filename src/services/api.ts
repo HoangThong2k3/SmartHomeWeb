@@ -59,11 +59,11 @@ import {
 // Ví dụ: NEXT_PUBLIC_API_URL=https://smarthomes-fdbehwcuaaexaggv.eastasia-01.azurewebsites.net/api
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ??
-  "https://smarthomes-fdbehwcuaaexaggv.eastasia-01.azurewebsites.net/api";
+  "https://backend.fmate.id.vn/api";
 // Fallback base paths cho một số trường hợp backend deploy khác prefix
 const API_BASE_URL_FALLBACKS: string[] = [
-  "https://smarthomes-fdbehwcuaaexaggv.eastasia-01.azurewebsites.net", // không có /api
-  "https://smarthomes-fdbehwcuaaexaggv.eastasia-01.azurewebsites.net/api/v1", // versioned api
+  "https://backend.fmate.id.vn", // không có /api
+  "https://backend.fmate.id.vn/api/v1", // versioned api
 ];
 
 class ApiService {
