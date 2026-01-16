@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import Layout from "@/components/layout/Layout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { ServiceGuard } from "@/components/auth/ServiceGuard";
@@ -9,6 +9,7 @@ import { apiService } from "@/services/api";
 import { useServiceAccess } from "@/hooks/useServiceAccess";
 import { useTimezone } from "@/hooks/useTimezone";
 import { useRealTimePolling } from "@/hooks/useRealTimePolling";
+import { useFirebaseRealtime } from "@/hooks/useFirebaseRealtime";
 import { Device, Home, Room, CreateSensorDataRequest, SensorData, SensorDataQuery } from "@/types";
 import {
   Thermometer,
@@ -54,7 +55,64 @@ export default function SensorDataPage() {
   const [timeRangePreset, setTimeRangePreset] = useState<string>("");
   const [selectedHomes, setSelectedHomes] = useState<string[]>([]);
 
-  // Real-time polling for latest sensor data - Now can safely reference selectedDevice
+  // Data states - MUST be declared BEFORE using them in useMemo
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [homes, setHomes] = useState<Home[]>([]);
+  const [sensorData, setSensorData] = useState<SensorData[]>([]);
+  const [latestSensorData, setLatestSensorData] = useState<SensorData | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingLatest, setIsLoadingLatest] = useState(false);
+  const [totalRecords, setTotalRecords] = useState<number>(0);
+  const [totalPages, setTotalPages] = useState<number>(0);
+
+  // Get NodeId from Room (via Device.RoomId) for Firebase Realtime Database
+  const getNodeIdFromDevice = useCallback((deviceId: number | null): string | null => {
+    if (!deviceId) return null;
+    
+    // Find device to get RoomId
+    const device = devices.find((d) => d.DeviceId === deviceId);
+    if (!device) {
+      console.warn(`[SensorDataPage] Device ${deviceId} not found`);
+      return null;
+    }
+
+    // Find room to get NodeIdentifier
+    const room = rooms.find((r) => Number(r.id) === device.RoomId);
+    if (!room) {
+      console.warn(`[SensorDataPage] Room ${device.RoomId} not found for Device ${deviceId}`);
+      return null;
+    }
+
+    const nodeId = room.nodeIdentifier;
+    if (nodeId) {
+      console.log(`[SensorDataPage] Found NodeId "${nodeId}" for Device ${deviceId} (Room: ${room.name})`);
+      return nodeId;
+    } else {
+      console.warn(`[SensorDataPage] Room "${room.name}" (ID: ${room.id}) has no NodeIdentifier. Firebase realtime will not work.`);
+      return null;
+    }
+  }, [devices, rooms]);
+
+  // Calculate selectedNodeId using useMemo to avoid temporal dead zone
+  const selectedNodeId = useMemo(() => {
+    return getNodeIdFromDevice(selectedDevice);
+  }, [selectedDevice, getNodeIdFromDevice]);
+
+  // Firebase Realtime Database subscription for latest sensor data
+  const {
+    data: firebaseTelemetryData,
+    isConnected: isFirebaseConnected,
+    error: firebaseError,
+    lastUpdated: firebaseLastUpdated,
+  } = useFirebaseRealtime(selectedNodeId, {
+    enabled: !!selectedNodeId, // Only enable if we have a NodeId
+    onError: (error) => {
+      console.warn("[SensorDataPage] Firebase realtime error:", error.message);
+    },
+  });
+
+  // Fallback: Real-time polling for latest sensor data if Firebase is not available
   const {
     data: realTimeLatestData,
     isPolling: isPollingLatest,
@@ -64,14 +122,15 @@ export default function SensorDataPage() {
     stopPolling: stopLatestPolling,
   } = useRealTimePolling(
     async () => {
-      if (selectedDevice) {
+      // Only use polling if Firebase is not connected or no NodeId available
+      if (selectedDevice && !selectedNodeId) {
         return await apiService.getLatestSensorData(selectedDevice);
       }
       return null;
     },
     {
       interval: 30000, // 30 seconds
-      enabled: !!selectedDevice,
+      enabled: !!selectedDevice && !selectedNodeId, // Only enable if no NodeId (Firebase not available)
       onError: (error) => {
         console.warn("[SensorDataPage] Real-time polling error:", error.message);
       },
@@ -80,17 +139,37 @@ export default function SensorDataPage() {
 
   // Prepare latestData state early so displayLatestData can reference it
   const [latestData, setLatestData] = useState<SensorData | null>(null);
-  // Use real-time data if available, otherwise fallback to manually fetched data
-  const displayLatestData = realTimeLatestData || latestData;
+  
+  // Convert Firebase telemetry data to SensorData format for display
+  const convertFirebaseDataToSensorData = (telemetry: any, deviceId: number): SensorData | null => {
+    if (!telemetry) return null;
+    try {
+      // Convert Firebase telemetry to JSON string (same format as backend API)
+      const valueString = JSON.stringify(telemetry);
+      const timestamp = telemetry.timestamp 
+        ? new Date(telemetry.timestamp).toISOString() 
+        : new Date().toISOString();
+      
+      return {
+        Id: 0, // Firebase doesn't have ID, use 0 as placeholder
+        DeviceId: deviceId,
+        Value: valueString,
+        TimeStamp: timestamp,
+      };
+    } catch (error) {
+      console.error("[SensorDataPage] Error converting Firebase data:", error);
+      return null;
+    }
+  };
 
-  // Data states
-  const [sensorData, setSensorData] = useState<SensorData[]>([]);
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [homes, setHomes] = useState<Home[]>([]);
+  // Use Firebase real-time data if available, otherwise fallback to API polling, then manually fetched data
+  const firebaseSensorData = selectedDevice && firebaseTelemetryData 
+    ? convertFirebaseDataToSensorData(firebaseTelemetryData, selectedDevice) 
+    : null;
+  const displayLatestData = firebaseSensorData || realTimeLatestData || latestData;
 
-  // Loading states
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingLatest, setIsLoadingLatest] = useState(false);
+  // Additional loading states (isLoading and isLoadingLatest already declared above)
+  const [isLoadingChart, setIsLoadingChart] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreData, setHasMoreData] = useState(true);
 
@@ -113,11 +192,13 @@ export default function SensorDataPage() {
       }
       setHomes(userHomes);
 
-      // Fetch all devices from all rooms
+      // Fetch all devices and rooms from all homes
       const allDevices: Device[] = [];
+      const allRooms: Room[] = [];
       for (const home of userHomes) {
         try {
           const homeRooms = await apiService.getRoomsByHome(home.id);
+          allRooms.push(...homeRooms);
           for (const room of homeRooms) {
             try {
               const roomDevices = await apiService.getDevicesByRoom(Number(room.id));
@@ -137,7 +218,13 @@ export default function SensorDataPage() {
         }
       }
       setDevices(allDevices);
+      setRooms(allRooms);
       console.log("[SensorDataPage] Total devices:", allDevices.length);
+      console.log("[SensorDataPage] Total rooms:", allRooms.length);
+
+      // Log rooms with NodeIdentifier for debugging
+      const roomsWithNodeId = allRooms.filter(r => r.nodeIdentifier);
+      console.log("[SensorDataPage] Rooms with NodeIdentifier:", roomsWithNodeId.length, roomsWithNodeId);
     } catch (err: any) {
       const errorMsg =
         err?.message || err?.detail || err?.error || "Failed to load devices";
@@ -796,15 +883,46 @@ export default function SensorDataPage() {
                     <Clock className="w-3 h-3 mr-1" />
                     Timezone: {userTimezone || "Loading..."}
                   </div>
-                  {isPollingLatest && (
-                    <div className="flex items-center text-green-600">
-                      <div className="w-2 h-2 bg-green-500 rounded-full mr-1 animate-pulse"></div>
-                      Live updates active
+                  {selectedNodeId && (
+                    <div className="flex items-center gap-2">
+                      {isFirebaseConnected ? (
+                        <div className="flex items-center text-green-600">
+                          <div className="w-2 h-2 bg-green-500 rounded-full mr-1 animate-pulse"></div>
+                          Firebase Realtime Active
+                          {firebaseLastUpdated && (
+                            <span className="ml-1">
+                              (last: {firebaseLastUpdated.toLocaleTimeString()})
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center text-yellow-600">
+                          <div className="w-2 h-2 bg-yellow-500 rounded-full mr-1"></div>
+                          Connecting to Firebase...
+                        </div>
+                      )}
+                      {selectedNodeId && (
+                        <span className="text-gray-500">
+                          (NodeId: {selectedNodeId})
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {!selectedNodeId && isPollingLatest && (
+                    <div className="flex items-center text-blue-600">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full mr-1 animate-pulse"></div>
+                      API Polling Active
                       {latestLastUpdated && (
                         <span className="ml-1">
                           (last: {latestLastUpdated.toLocaleTimeString()})
                         </span>
                       )}
+                    </div>
+                  )}
+                  {firebaseError && (
+                    <div className="flex items-center text-red-600">
+                      <div className="w-2 h-2 bg-red-500 rounded-full mr-1"></div>
+                      Firebase Error: {firebaseError.message}
                     </div>
                   )}
                 </div>
@@ -840,6 +958,21 @@ export default function SensorDataPage() {
               ) : (
                 <p className="text-sm text-gray-500">
                   {isLoadingLatest ? "Đang tải dữ liệu..." : "Chưa có bản ghi mới nhất cho thiết bị này."}
+                  {selectedNodeId && !isFirebaseConnected && !firebaseError && (
+                    <span className="block mt-1 text-xs text-yellow-600">
+                      Đang kết nối Firebase... (NodeId: {selectedNodeId})
+                    </span>
+                  )}
+                  {selectedNodeId && firebaseError && (
+                    <span className="block mt-1 text-xs text-red-600">
+                      Firebase không khả dụng. Sử dụng API polling thay thế.
+                    </span>
+                  )}
+                  {!selectedNodeId && selectedDevice && (
+                    <span className="block mt-1 text-xs text-gray-400">
+                      (Room chưa có NodeIdentifier. Vui lòng cập nhật Room để sử dụng Firebase Realtime)
+                    </span>
+                  )}
                 </p>
               )}
             </div>

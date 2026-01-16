@@ -94,6 +94,7 @@ export interface Home {
   id: string;
   name: string;
   address?: string;
+  homeKey?: string; // HomeKey for IoT device provisioning
   ownerId: string;
   securityStatus?: string;
   owner?: User;
@@ -130,6 +131,7 @@ export interface HomeProfile {
   ownerName?: string;
   ownerEmail?: string;
   address?: string;
+  homeKey?: string; // HomeKey for IoT device provisioning
   description?: string;
   imageUrl?: string;
   createdAt: string;
@@ -159,6 +161,7 @@ export interface Room {
   name: string;
   type: "living_room" | "bedroom" | "kitchen" | "bathroom" | "garage" | "other";
   homeId: string;
+  nodeIdentifier?: string; // NodeId for Firebase Realtime Database (e.g., "NODE_01")
   // Optional devices when backend embeds devices in the Room response
   Devices?: Device[];
   devices?: Device[];
@@ -191,6 +194,7 @@ export interface Device {
   Name: string;
   DeviceType: string;
   CurrentState: string;
+  HardwareIdentifier?: string; // Hardware identifier for IoT device
   // Frontend-friendly aliases
   type?: string;
   status?: string;

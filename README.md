@@ -55,10 +55,12 @@ A comprehensive admin dashboard for managing smart home devices, users, and auto
 
 ### 📊 Sensor Data Monitoring
 
-- View real-time sensor readings
+- View real-time sensor readings from Firebase Realtime Database
 - Historical data visualization
 - Device-specific data filtering
 - Time range selection
+- Automatic fallback to API polling if Firebase is unavailable
+- Firebase Realtime Database integration for instant updates (see [Firebase Integration Guide](doc/FIREBASE_INTEGRATION.md))
 
 ### 🏥 System Health Monitoring
 
@@ -115,7 +117,18 @@ cp .env.example .env.local
 ```bash
 # .env.local
 NEXT_PUBLIC_API_URL=http://localhost:5000/api
+
+# Firebase Realtime Database (Optional - for real-time sensor data)
+NEXT_PUBLIC_FIREBASE_API_KEY=your-api-key
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_DATABASE_URL=https://your-project-default-rtdb.firebaseio.com/
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your-project-id
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
+NEXT_PUBLIC_FIREBASE_APP_ID=1:123456789:web:abcdef
 ```
+
+**Note**: Firebase configuration is optional. If not configured, the system will fallback to API polling for real-time sensor data updates. See [Firebase Integration Guide](doc/FIREBASE_INTEGRATION.md) for more details.
 
 5. Run the development server
 
