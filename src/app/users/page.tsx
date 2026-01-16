@@ -323,17 +323,6 @@ export default function UsersPage() {
                               <Ban className="w-4 h-4" />
                             </button>
                           )}
-                          {/* Hiển thị button tạo home cho customer có service ACTIVE */}
-                          {user.role === "customer" && 
-                           user.serviceStatus?.toUpperCase() === "ACTIVE" && (
-                            <button
-                              onClick={() => handleCreateHomeForUser(user.id)}
-                              className="text-purple-600 hover:text-purple-800"
-                              title="Tạo home cho user"
-                            >
-                              <Home className="w-4 h-4" />
-                            </button>
-                          )}
                           <button
                             onClick={() => handleDeleteUser(user.id)}
                             className="text-red-600 hover:text-red-800"

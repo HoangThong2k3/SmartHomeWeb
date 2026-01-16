@@ -97,6 +97,7 @@ export interface Home {
   name: string;
   address?: string;
   ownerId: string;
+  homeKey?: string;
   securityStatus?: string;
   owner?: User;
   createdAt: string;
@@ -106,6 +107,7 @@ export interface Home {
 export interface CreateHomeRequest {
   name: string;
   ownerId: string;
+  homeKey?: string;
   securityStatus?: string;
   address?: string;
   description?: string;
@@ -144,6 +146,7 @@ export interface HomeProfile {
   installationDate?: string;
   installedBy?: string;
   installationNotes?: string;
+  homeKey?: string;
   area?: number;
   floors?: number;
   homeType?: string;
@@ -591,4 +594,24 @@ export interface RecentTransaction {
   method: string;
   description: string;
   createdAt: string;
+}
+
+// Service Status History
+export interface ServiceStatusHistory {
+  Id: number;
+  UserId: number;
+  OldStatus: string;
+  NewStatus: string;
+  ChangedBy: number; // Admin userId who changed
+  Note?: string | null;
+  ChangedAt: string; // ISO datetime
+}
+
+// Face Auth payloads (frontend)
+export interface FaceVerifyResponse {
+  isSuccess: boolean;
+  message?: string;
+  userId?: string | null;
+  confidence?: number | null;
+  similarity?: number | null;
 }
