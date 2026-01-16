@@ -96,7 +96,6 @@ export interface Home {
   id: string;
   name: string;
   address?: string;
-  homeKey?: string; // HomeKey for IoT device provisioning
   ownerId: string;
   homeKey?: string;
   securityStatus?: string;
@@ -135,7 +134,6 @@ export interface HomeProfile {
   ownerName?: string;
   ownerEmail?: string;
   address?: string;
-  homeKey?: string; // HomeKey for IoT device provisioning
   description?: string;
   imageUrl?: string;
   createdAt: string;

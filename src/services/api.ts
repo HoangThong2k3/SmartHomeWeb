@@ -161,7 +161,6 @@ class ApiService {
       address: api?.address || api?.Address, // optional in FE
       homeKey,
       ownerId,
-      homeKey: api?.HomeKey ?? api?.homeKey ?? api?.Home_Key ?? undefined,
       securityStatus,
       createdAt,
       updatedAt,
@@ -181,7 +180,6 @@ class ApiService {
       ownerName: api?.OwnerName ?? api?.ownerName,
       ownerEmail: api?.OwnerEmail ?? api?.ownerEmail,
       address: api?.Address ?? api?.address,
-      homeKey: api?.HomeKey ?? api?.homeKey,
       description: api?.Description ?? api?.description,
       imageUrl: api?.ImageUrl ?? api?.imageUrl,
       createdAt:
@@ -198,7 +196,6 @@ class ApiService {
       installationDate: api?.InstallationDate ?? api?.installationDate,
       installedBy: api?.InstalledBy ?? api?.installedBy,
       installationNotes: api?.InstallationNotes ?? api?.installationNotes,
-      homeKey: api?.HomeKey ?? api?.homeKey ?? api?.Home_Key ?? undefined,
       area: api?.Area ?? api?.area,
       floors: api?.Floors ?? api?.floors,
       homeType: api?.HomeType ?? api?.homeType,
