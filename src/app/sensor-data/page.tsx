@@ -569,7 +569,7 @@ export default function SensorDataPage() {
                 )}
 
                 {/* Add Data button */}
-                {user?.role === "admin" && (
+                {(user as any)?.role === "admin" && (
                   <button
                     onClick={() => setShowCreateForm(true)}
                     className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
@@ -927,7 +927,7 @@ export default function SensorDataPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Timestamp
                     </th>
-                    {user?.role === "admin" && (
+                    {(user as any)?.role === "admin" && (
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Actions
                       </th>
@@ -956,7 +956,7 @@ export default function SensorDataPage() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {formatTimestamp(item.timeStamp)}
                         </td>
-                        {user?.role === "admin" && (
+                        {(user as any)?.role === "admin" && (
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                             <div className="flex space-x-2">
                               <button

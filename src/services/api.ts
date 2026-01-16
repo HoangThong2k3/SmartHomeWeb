@@ -53,6 +53,9 @@ import {
   RecentTransaction,
   DeviceMapping,
   CreateDeviceMappingRequest,
+  ServiceStatusHistory,
+  FaceRegisterResponse,
+  FaceVerifyResponse,
 } from "@/types";
 
 // Base URL cho backend, ưu tiên lấy từ biến môi trường NEXT_PUBLIC_API_URL
@@ -1054,6 +1057,37 @@ class ApiService {
     return (list || []).map((u) => this.mapUserFromApi(u));
   }
 
+  /**
+   * Try to fetch users who do not have a home assigned from backend.
+   * Falls back to fetching all users and filtering client-side if the endpoint is not available.
+   */
+  async getUsersWithoutHome(): Promise<User[]> {
+    // Try a few possible backend endpoint names that teams might implement
+    const candidateEndpoints = ["/Users/without-home", "/Users/withoutHome", "/Users/no-home", "/Users/without-home-list"];
+    for (const ep of candidateEndpoints) {
+      try {
+        const list = await this.request<any[]>(ep);
+        return (list || []).map((u) => this.mapUserFromApi(u));
+      } catch (err) {
+        // ignore and try next
+      }
+    }
+
+    // Fallback: fetch all users and all homes, then filter users who are not owners of any home
+    try {
+      const [usersList, homesList] = await Promise.all([this.getUsers(), this.getAllHomes()]);
+      const owners = new Set(homesList.map((h) => (h.ownerId || "").toString()));
+      return usersList.filter((u) => !owners.has((u.id || u.userId || "").toString()));
+    } catch (err) {
+      // As last resort, return all users
+      try {
+        return await this.getUsers();
+      } catch {
+        return [];
+      }
+    }
+  }
+
   async getUserById(id: string): Promise<User> {
     const data = await this.request<any>(`/Users/${id}`);
     return this.mapUserFromApi(data);
@@ -1388,11 +1422,11 @@ class ApiService {
 
     // Coerce/normalize fields to types the backend expects (numbers and ISO datetimes)
     const normalizedArea =
-      homeData.area !== undefined && homeData.area !== null && homeData.area !== ""
+      homeData.area !== undefined && homeData.area !== null && homeData.area !== 0
         ? Number(homeData.area)
         : undefined;
     const normalizedFloors =
-      homeData.floors !== undefined && homeData.floors !== null && homeData.floors !== ""
+      homeData.floors !== undefined && homeData.floors !== null && homeData.floors !== 0
         ? Number(homeData.floors)
         : undefined;
 
@@ -2337,12 +2371,25 @@ class ApiService {
   }
 
   // FaceAuth (multipart)
-  async verifyFace(form: FormData): Promise<FaceVerifyResponse> {
-    // Use fetch directly to send multipart/form-data
+  async registerFace(data: {
+    homeId: number;
+    memberName: string;
+    relation?: string;
+    image: File;
+    userId?: string;
+  }): Promise<FaceRegisterResponse> {
     const token = this.getAuthToken();
-    const url = `${API_BASE_URL}/FaceAuth/verify`;
+    const url = `${API_BASE_URL}/Face/register`;
     const headers: Record<string,string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const form = new FormData();
+    form.append("homeId", data.homeId.toString());
+    form.append("memberName", data.memberName);
+    if (data.relation) form.append("relation", data.relation);
+    form.append("image", data.image);
+    if (data.userId) form.append("userId", data.userId);
+
     const resp = await fetch(url, { method: "POST", body: form, headers });
     if (!resp.ok) {
       const txt = await resp.text().catch(()=>"");
@@ -2351,13 +2398,23 @@ class ApiService {
     return await resp.json();
   }
 
-  async registerFace(userId: string, form: FormData): Promise<any> {
+  async verifyFace(data: {
+    homeId: number;
+    deviceId?: number;
+    eventType: "RECOGNIZED" | "INTRUDER" | "UNKNOWN";
+    image: File;
+  }): Promise<FaceVerifyResponse> {
     const token = this.getAuthToken();
-    const url = `${API_BASE_URL}/FaceAuth/register`;
+    const url = `${API_BASE_URL}/Face/verify`;
     const headers: Record<string,string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
-    // append userId to form if not present
-    if (!form.get("UserId")) form.append("UserId", userId);
+
+    const form = new FormData();
+    form.append("homeId", data.homeId.toString());
+    if (data.deviceId) form.append("deviceId", data.deviceId.toString());
+    form.append("eventType", data.eventType);
+    form.append("image", data.image);
+
     const resp = await fetch(url, { method: "POST", body: form, headers });
     if (!resp.ok) {
       const txt = await resp.text().catch(()=>"");

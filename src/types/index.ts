@@ -609,9 +609,30 @@ export interface ServiceStatusHistory {
 
 // Face Auth payloads (frontend)
 export interface FaceVerifyResponse {
-  isSuccess: boolean;
-  message?: string;
-  userId?: string | null;
-  confidence?: number | null;
-  similarity?: number | null;
+  statusCode: number;
+  message: string;
+  data: {
+    isSuccess: boolean;
+    isAuthorized: boolean;
+    faceProfileId?: number | null;
+    memberName?: string | null;
+    confidence: number;
+    logId: number;
+    action: "ALLOW_ENTRY" | "DENY_ENTRY" | "ALERT_OWNER";
+  };
+}
+
+export interface FaceRegisterResponse {
+  statusCode: number;
+  message: string;
+  data: {
+    faceId: number;
+    homeId: number;
+    memberName: string;
+    relation?: string;
+    imageUrl: string;
+    awsFaceId: string;
+    createdAt: string;
+    userId?: string;
+  };
 }

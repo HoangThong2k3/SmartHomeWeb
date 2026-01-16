@@ -13,6 +13,7 @@ import {
   Thermometer,
   Droplets,
   RefreshCw,
+  Camera,
 } from "lucide-react";
 
 const UserNavigation = () => {
@@ -25,6 +26,7 @@ const UserNavigation = () => {
     { name: "Devices", href: "/devices", icon: Zap },
     { name: "Automations", href: "/automations", icon: Settings },
     { name: "Sensor Data", href: "/sensor-data", icon: Thermometer },
+    { name: "Face Recognition", href: "/face", icon: Camera },
     { name: "Quản lý Dịch vụ", href: "/service-management", icon: RefreshCw },
     { name: "System Health", href: "/health", icon: Droplets },
   ];
