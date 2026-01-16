@@ -112,30 +112,7 @@ export default function SensorDataPage() {
     },
   });
 
-  // Fallback: Real-time polling for latest sensor data if Firebase is not available
-  const {
-    data: realTimeLatestData,
-    isPolling: isPollingLatest,
-    lastUpdated: latestLastUpdated,
-    error: pollingError,
-    startPolling: startLatestPolling,
-    stopPolling: stopLatestPolling,
-  } = useRealTimePolling(
-    async () => {
-      // Only use polling if Firebase is not connected or no NodeId available
-      if (selectedDevice && !selectedNodeId) {
-        return await apiService.getLatestSensorData(selectedDevice);
-      }
-      return null;
-    },
-    {
-      interval: 30000, // 30 seconds
-      enabled: !!selectedDevice && !selectedNodeId, // Only enable if no NodeId (Firebase not available)
-      onError: (error) => {
-        console.warn("[SensorDataPage] Real-time polling error:", error.message);
-      },
-    }
-  );
+  // Removed: Real-time polling for latest sensor data (no longer using API, only Firebase)
 
   // Prepare latestData state early so displayLatestData can reference it
   const [latestData, setLatestData] = useState<SensorData | null>(null);
@@ -162,11 +139,152 @@ export default function SensorDataPage() {
     }
   };
 
-  // Use Firebase real-time data if available, otherwise fallback to API polling, then manually fetched data
+  // Format sensor value based on DeviceType for better UI display
+  const formatSensorValue = (value: string, deviceType?: string): React.ReactNode => {
+    if (!value) return <span className="text-gray-400">No data</span>;
+
+    try {
+      const parsed = JSON.parse(value);
+      
+      // If not an object, display as-is
+      if (typeof parsed !== "object" || parsed === null) {
+        return (
+          <pre className="text-xs bg-white rounded p-2 border overflow-x-auto whitespace-pre-wrap">
+            {value}
+          </pre>
+        );
+      }
+
+      // Format based on DeviceType
+      const deviceTypeUpper = (deviceType || "").toUpperCase();
+      
+      // DHT Sensor: Temperature & Humidity
+      if (deviceTypeUpper.includes("DHT") || deviceTypeUpper.includes("TEMPERATURE")) {
+        const items = [];
+        if (typeof parsed.temp === "number") {
+          items.push(
+            <div key="temp" className="flex justify-between items-center py-1 border-b border-gray-200">
+              <span className="text-xs text-gray-500">Temperature</span>
+              <span className="text-sm font-semibold text-blue-600">{parsed.temp.toFixed(1)}°C</span>
+            </div>
+          );
+        }
+        if (typeof parsed.hum === "number") {
+          items.push(
+            <div key="hum" className="flex justify-between items-center py-1">
+              <span className="text-xs text-gray-500">Humidity</span>
+              <span className="text-sm font-semibold text-green-600">{parsed.hum.toFixed(1)}%</span>
+            </div>
+          );
+        }
+        if (items.length > 0) {
+          return <div className="space-y-1">{items}</div>;
+        }
+      }
+
+      // MQ2 Gas Sensor
+      if (deviceTypeUpper.includes("MQ2") || deviceTypeUpper.includes("GAS_MQ2")) {
+        if (typeof parsed.gas_mq2 === "number") {
+          return (
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-gray-500">Gas (MQ2)</span>
+              <span className="text-sm font-semibold text-orange-600">{parsed.gas_mq2} ppm</span>
+            </div>
+          );
+        }
+      }
+
+      // MQ135 Gas Sensor
+      if (deviceTypeUpper.includes("MQ135") || deviceTypeUpper.includes("GAS_MQ135")) {
+        if (typeof parsed.gas_mq135 === "number") {
+          return (
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-gray-500">Gas (MQ135)</span>
+              <span className="text-sm font-semibold text-red-600">{parsed.gas_mq135} ppm</span>
+            </div>
+          );
+        }
+      }
+
+      // Motion Sensor
+      if (deviceTypeUpper.includes("MOTION") || deviceTypeUpper.includes("PIR")) {
+        if (typeof parsed.motion === "number") {
+          return (
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-gray-500">Motion</span>
+              <span className={`text-sm font-semibold ${parsed.motion === 1 ? "text-green-600" : "text-gray-400"}`}>
+                {parsed.motion === 1 ? "Detected" : "No Motion"}
+              </span>
+            </div>
+          );
+        }
+      }
+
+      // Fallback: Display all sensor values nicely formatted
+      const entries = Object.entries(parsed).filter(([key]) => key !== "timestamp");
+      if (entries.length > 0) {
+        return (
+          <div className="space-y-2">
+            {entries.map(([key, val]) => {
+              // Format key name
+              const label = key
+                .replace(/_/g, " ")
+                .replace(/\b\w/g, (l) => l.toUpperCase());
+              
+              // Format value with unit
+              let displayValue = String(val);
+              let unit = "";
+              
+              if (typeof val === "number") {
+                if (key.includes("temp")) {
+                  displayValue = val.toFixed(1);
+                  unit = "°C";
+                } else if (key.includes("hum")) {
+                  displayValue = val.toFixed(1);
+                  unit = "%";
+                } else if (key.includes("gas")) {
+                  unit = " ppm";
+                } else if (key.includes("motion")) {
+                  displayValue = val === 1 ? "Detected" : "No Motion";
+                } else {
+                  displayValue = val.toFixed(2);
+                }
+              }
+              
+              return (
+                <div key={key} className="flex justify-between items-center py-1 border-b border-gray-100 last:border-0">
+                  <span className="text-xs text-gray-500">{label}</span>
+                  <span className="text-sm font-semibold text-gray-900">
+                    {displayValue}{unit}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      }
+
+      // Last fallback: formatted JSON
+      return (
+        <pre className="text-xs bg-white rounded p-2 border overflow-x-auto whitespace-pre-wrap">
+          {JSON.stringify(parsed, null, 2)}
+        </pre>
+      );
+    } catch {
+      // Not JSON, display as-is
+      return (
+        <pre className="text-xs bg-white rounded p-2 border overflow-x-auto whitespace-pre-wrap">
+          {value}
+        </pre>
+      );
+    }
+  };
+
+  // Use Firebase real-time data only (no API fallback)
   const firebaseSensorData = selectedDevice && firebaseTelemetryData 
     ? convertFirebaseDataToSensorData(firebaseTelemetryData, selectedDevice) 
     : null;
-  const displayLatestData = firebaseSensorData || realTimeLatestData || latestData;
+  const displayLatestData = firebaseSensorData;
 
   // Additional loading states (isLoading and isLoadingLatest already declared above)
   const [isLoadingChart, setIsLoadingChart] = useState(false);
@@ -235,23 +353,7 @@ export default function SensorDataPage() {
     }
   };
 
-  const fetchLatestSensorData = async () => {
-    if (!selectedDevice) return;
-    try {
-      setIsLoadingLatest(true);
-      const latest = await apiService.getLatestSensorData(selectedDevice);
-      if (latest) {
-        setLatestData(latest);
-      } else {
-        setLatestData(null);
-      }
-    } catch (err: any) {
-      console.warn("[SensorDataPage] Could not fetch latest sensor data:", err?.message || err);
-      setLatestData(null);
-    } finally {
-      setIsLoadingLatest(false);
-    }
-  };
+  // Removed: fetchLatestSensorData - No longer using API for latest data, only Firebase realtime
 
   const fetchSensorData = useCallback(async (loadMore = false) => {
     try {
@@ -339,10 +441,7 @@ export default function SensorDataPage() {
   useEffect(() => {
     if ((selectedDevice || selectedDevices.length > 0) && canUseService) {
       fetchSensorData();
-      // Note: Latest sensor data fetching will be updated to handle multiple devices
-      if (selectedDevice) {
-        fetchLatestSensorData();
-      }
+      // Removed: fetchLatestSensorData - Only using Firebase realtime now
     } else {
       setSensorData([]);
       setLatestData(null);
@@ -675,7 +774,8 @@ export default function SensorDataPage() {
           </div>
         )}
 
-        {/* Filters */}
+        {/* Filters - Only for Customer */}
+        {user?.role !== "admin" && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold flex items-center">
@@ -865,82 +965,67 @@ export default function SensorDataPage() {
             )}
           </div>
         </div>
+        )}
 
-        {/* Latest reading */}
-        {selectedDevice && (
-          isLoadingLatest ? (
-            <SensorLatestReadingSkeleton />
-          ) : (
+        {/* Latest reading - Only for Customer */}
+        {user?.role !== "admin" && selectedDevice && (
+          displayLatestData ? (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
               <div className="flex items-center justify-between mb-3">
-              <div>
-                <p className="text-sm text-gray-500">Latest reading</p>
-                <p className="text-lg font-semibold text-gray-900">
-                  Device ID: {selectedDevice}
-                </p>
-                <div className="text-xs text-gray-400 mt-1 space-y-1">
-                  <div className="flex items-center">
-                    <Clock className="w-3 h-3 mr-1" />
-                    Timezone: {userTimezone || "Loading..."}
+                <div>
+                  <p className="text-sm text-gray-500">Latest reading</p>
+                  <p className="text-lg font-semibold text-gray-900">
+                    Device ID: {selectedDevice}
+                  </p>
+                  <div className="text-xs text-gray-400 mt-1 space-y-1">
+                    <div className="flex items-center">
+                      <Clock className="w-3 h-3 mr-1" />
+                      Timezone: {userTimezone || "Loading..."}
+                    </div>
+                    {selectedNodeId && (
+                      <div className="flex items-center gap-2">
+                        {isFirebaseConnected ? (
+                          <div className="flex items-center text-green-600">
+                            <div className="w-2 h-2 bg-green-500 rounded-full mr-1 animate-pulse"></div>
+                            Firebase Realtime Active
+                            {firebaseLastUpdated && (
+                              <span className="ml-1">
+                                (last: {firebaseLastUpdated.toLocaleTimeString()})
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center text-yellow-600">
+                            <div className="w-2 h-2 bg-yellow-500 rounded-full mr-1"></div>
+                            Connecting to Firebase...
+                          </div>
+                        )}
+                        {selectedNodeId && (
+                          <span className="text-gray-500">
+                            (NodeId: {selectedNodeId})
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {firebaseError && (
+                      <div className="flex items-center text-red-600">
+                        <div className="w-2 h-2 bg-red-500 rounded-full mr-1"></div>
+                        Firebase Error: {firebaseError.message}
+                      </div>
+                    )}
                   </div>
-                  {selectedNodeId && (
-                    <div className="flex items-center gap-2">
-                      {isFirebaseConnected ? (
-                        <div className="flex items-center text-green-600">
-                          <div className="w-2 h-2 bg-green-500 rounded-full mr-1 animate-pulse"></div>
-                          Firebase Realtime Active
-                          {firebaseLastUpdated && (
-                            <span className="ml-1">
-                              (last: {firebaseLastUpdated.toLocaleTimeString()})
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="flex items-center text-yellow-600">
-                          <div className="w-2 h-2 bg-yellow-500 rounded-full mr-1"></div>
-                          Connecting to Firebase...
-                        </div>
-                      )}
-                      {selectedNodeId && (
-                        <span className="text-gray-500">
-                          (NodeId: {selectedNodeId})
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {!selectedNodeId && isPollingLatest && (
-                    <div className="flex items-center text-blue-600">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full mr-1 animate-pulse"></div>
-                      API Polling Active
-                      {latestLastUpdated && (
-                        <span className="ml-1">
-                          (last: {latestLastUpdated.toLocaleTimeString()})
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {firebaseError && (
-                    <div className="flex items-center text-red-600">
-                      <div className="w-2 h-2 bg-red-500 rounded-full mr-1"></div>
-                      Firebase Error: {firebaseError.message}
-                    </div>
-                  )}
                 </div>
-              </div>
-              {isLoadingLatest && !isPollingLatest && (
-                <div className="flex items-center text-sm text-gray-500">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
-                  Loading...
-                </div>
-              )}
               </div>
               {displayLatestData ? (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                    <p className="text-xs text-gray-500">Value</p>
-                    <pre className="text-xs bg-white rounded p-2 border overflow-x-auto whitespace-pre-wrap">
-                      {displayLatestData.Value}
-                    </pre>
+                    <p className="text-xs text-gray-500 mb-2">Value</p>
+                    <div className="bg-white rounded p-2 border min-h-[60px]">
+                      {formatSensorValue(
+                        displayLatestData.Value,
+                        devices.find(d => d.DeviceId === selectedDevice)?.DeviceType
+                      )}
+                    </div>
                   </div>
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                     <p className="text-xs text-gray-500">Timestamp</p>
@@ -951,21 +1036,16 @@ export default function SensorDataPage() {
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                     <p className="text-xs text-gray-500">Record ID</p>
                     <p className="text-sm font-medium text-gray-900">
-                      {displayLatestData.Id}
+                      {displayLatestData.Id || "Firebase Realtime"}
                     </p>
                   </div>
                 </div>
               ) : (
                 <p className="text-sm text-gray-500">
-                  {isLoadingLatest ? "Đang tải dữ liệu..." : "Chưa có bản ghi mới nhất cho thiết bị này."}
+                  Chưa có bản ghi mới nhất cho thiết bị này.
                   {selectedNodeId && !isFirebaseConnected && !firebaseError && (
                     <span className="block mt-1 text-xs text-yellow-600">
                       Đang kết nối Firebase... (NodeId: {selectedNodeId})
-                    </span>
-                  )}
-                  {selectedNodeId && firebaseError && (
-                    <span className="block mt-1 text-xs text-red-600">
-                      Firebase không khả dụng. Sử dụng API polling thay thế.
                     </span>
                   )}
                   {!selectedNodeId && selectedDevice && (
@@ -976,11 +1056,13 @@ export default function SensorDataPage() {
                 </p>
               )}
             </div>
-          )
+          ) : selectedNodeId ? (
+            <SensorLatestReadingSkeleton />
+          ) : null
         )}
 
-        {/* Simple trend chart */}
-        {selectedDevice && sensorData.length > 0 && (
+        {/* Simple trend chart - Only for Customer */}
+        {user?.role !== "admin" && selectedDevice && sensorData.length > 0 && (
           isLoading ? (
             <SensorChartSkeleton />
           ) : (
@@ -1007,19 +1089,21 @@ export default function SensorDataPage() {
           )
         )}
 
-        {isLoading ? (
-          <SensorDataTableSkeleton />
-        ) : sensorData.length === 0 ? (
-          <div className="text-center py-12">
-            <Thermometer className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              No sensor data found
-            </h3>
-            <p className="text-gray-500 mb-4">
-              {selectedDevice
-                ? "No data found for the selected device and date range."
-                : "Select a device to view sensor data."}
-            </p>
+        {/* Sensor Data Table - Only for Customer */}
+        {user?.role !== "admin" && (
+          isLoading ? (
+            <SensorDataTableSkeleton />
+          ) : sensorData.length === 0 ? (
+            <div className="text-center py-12">
+              <Thermometer className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                No sensor data found
+              </h3>
+              <p className="text-gray-500 mb-4">
+                {selectedDevice
+                  ? "No data found for the selected device and date range."
+                  : "Select a device to view sensor data."}
+              </p>
             <button
               onClick={() => setShowCreateForm(true)}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
@@ -1139,7 +1223,7 @@ export default function SensorDataPage() {
               </div>
             )}
           </div>
-        )}
+        ))}
 
         {showCreateForm && (
           <CreateSensorDataForm
