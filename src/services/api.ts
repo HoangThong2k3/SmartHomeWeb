@@ -141,6 +141,7 @@ class ApiService {
       api?.UserId ??
       "Unknown"
     ).toString();
+    const homeKey = api?.homeKey ?? api?.HomeKey ?? undefined;
     const securityStatus =
       api?.securityStatus ?? api?.SecurityStatus ?? "DISARMED";
     const createdAt =
@@ -158,6 +159,7 @@ class ApiService {
       id,
       name,
       address: api?.address || api?.Address, // optional in FE
+      homeKey,
       ownerId,
       homeKey: api?.HomeKey ?? api?.homeKey ?? api?.Home_Key ?? undefined,
       securityStatus,
@@ -179,6 +181,7 @@ class ApiService {
       ownerName: api?.OwnerName ?? api?.ownerName,
       ownerEmail: api?.OwnerEmail ?? api?.ownerEmail,
       address: api?.Address ?? api?.address,
+      homeKey: api?.HomeKey ?? api?.homeKey,
       description: api?.Description ?? api?.description,
       imageUrl: api?.ImageUrl ?? api?.imageUrl,
       createdAt:
@@ -233,6 +236,7 @@ class ApiService {
     ).toString();
     const name = api?.name ?? api?.Name ?? "";
     const homeId = (api?.homeId ?? api?.HomeId ?? "").toString();
+    const nodeIdentifier = api?.nodeIdentifier ?? api?.NodeIdentifier ?? undefined;
     const apiType = api?.type ?? api?.Type ?? api?.roomType ?? api?.RoomType;
     const type = this.normalizeRoomType(apiType, name);
     const createdAt =
@@ -245,6 +249,7 @@ class ApiService {
       name,
       type,
       homeId,
+      nodeIdentifier,
       createdAt,
       updatedAt,
     } as Room;
@@ -375,6 +380,7 @@ class ApiService {
       Name: api?.Name ?? api?.name ?? "",
       DeviceType: api?.DeviceType ?? api?.deviceType ?? "",
       CurrentState: api?.CurrentState ?? api?.currentState ?? "",
+      HardwareIdentifier: api?.HardwareIdentifier ?? api?.hardwareIdentifier ?? undefined,
     };
   }
 
@@ -1335,10 +1341,31 @@ class ApiService {
   // Admin không thể sử dụng endpoint này (Privacy Wall)
   async getMyHomes(): Promise<Home[]> {
     try {
-      console.log("[ApiService] getMyHomes -> calling GET /Homes/my-homes (customer only)");
-      const list = await this.request<any[]>("/Homes/my-homes");
-      console.log("[ApiService] getMyHomes - Successfully fetched homes:", list?.length || 0);
-      return (list || []).map((h) => this.mapHomeFromApi(h));
+      // Get user role from localStorage
+      const userStr = localStorage.getItem("user");
+      let userRole = "CUSTOMER"; // default
+      
+      if (userStr) {
+        try {
+          const user = JSON.parse(userStr);
+          userRole = user?.role?.toUpperCase() || "CUSTOMER";
+        } catch (e) {
+          console.warn("[ApiService] Could not parse user from localStorage");
+        }
+      }
+
+      // Admin uses /Homes, Customer uses /Homes/my-homes
+      if (userRole === "ADMIN") {
+        console.log("[ApiService] getMyHomes -> Admin detected, calling GET /Homes instead");
+        const list = await this.request<any[]>("/Homes");
+        console.log("[ApiService] getMyHomes - Successfully fetched homes (admin):", list?.length || 0);
+        return (list || []).map((h) => this.mapHomeFromApi(h));
+      } else {
+        console.log("[ApiService] getMyHomes -> calling GET /Homes/my-homes (customer only)");
+        const list = await this.request<any[]>("/Homes/my-homes");
+        console.log("[ApiService] getMyHomes - Successfully fetched homes (customer):", list?.length || 0);
+        return (list || []).map((h) => this.mapHomeFromApi(h));
+      }
     } catch (err: any) {
       const msg = (err?.message || "").toLowerCase();
       
@@ -1347,7 +1374,7 @@ class ApiService {
       // 2. Customer chưa có home được tạo
       // 3. Token không hợp lệ
       if (msg.includes("403") || msg.includes("forbidden") || msg.includes("401") || msg.includes("unauthorized")) {
-        console.log("[ApiService] getMyHomes - Permission issue (403/401). This endpoint is for customers only. Admin should not use this endpoint.");
+        console.log("[ApiService] getMyHomes - Permission issue (403/401). Returning empty array.");
         return [];
       }
       
@@ -1954,7 +1981,7 @@ class ApiService {
     console.log("[API] getLatestSensorData - deviceId:", deviceId);
     try {
       const result = await this.request<any>(
-        `/SensorData/device/${deviceId}/latest`
+        `/sensordata/device/${deviceId}/latest` // Fixed: lowercase 'sensordata'
       );
       console.log("[API] getLatestSensorData - response:", result);
       return {

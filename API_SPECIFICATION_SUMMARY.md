@@ -1,7 +1,8 @@
 # SmartHome API Specification for Frontend Development
 
-> **Tài liệu đầy đủ về API endpoints cho Frontend Developer**
-> Version: 1.1  
+> **Tài liệu đầy đủ về API endpoints cho Frontend Developer**  
+> Version: 2.0  
+> Last Updated: 2025-01-19  
 > Base URL: `https://localhost:7140/api` (Development)
 
 ---
@@ -21,12 +22,11 @@
    - [Sensor Data](#8-sensor-data)
    - [Payment & Packages](#9-payment--service-packages)
    - [Support Requests](#10-support-requests)
-   - [Admin Operations](#11-admin-operations)
-   - [Health & Monitoring](#12-health--monitoring)
-   - [Face Recognition](#13-face-recognition-face-authentication)
-   - [Payment Webhooks](#14-payment-webhooks-internal)
+   - [Face Recognition](#11-face-recognition)
+   - [Admin Operations](#12-admin-operations)
+   - [Health & Monitoring](#13-health--monitoring)
+   - [Statistics & Dashboard](#14-statistics--dashboard)
    - [Service Status History](#15-service-status-history)
-   - [Stats & Dashboard (Admin Only)](#16-stats--dashboard-admin-only)
 
 ---
 
@@ -175,7 +175,7 @@ if (accessTokenExpired()) {
 
 ---
 
-### 1.3. POST /api/auth/refresh
+### 1.3. POST /api/auth/refresh-token
 **Chức năng**: Làm mới access token khi hết hạn
 
 **Auth**: Public (nhưng cần refreshToken hợp lệ)
@@ -211,17 +211,12 @@ if (accessTokenExpired()) {
 
 ---
 
-### 1.4. POST /api/auth/revoke
+### 1.4. POST /api/auth/revoke-token
 **Chức năng**: Thu hồi refresh token (logout)
 
 **Auth**: Required (Bearer token)
 
-**Request Body**:
-```json
-{
-  "refreshToken": "string (token to revoke)"
-}
-```
+**Request Body**: Không cần body, sử dụng JWT token trong header để xác định user
 
 **Response 200 OK**:
 ```json
@@ -305,17 +300,31 @@ if (accessTokenExpired()) {
 
 ---
 
-### 1.8. POST /api/auth/reset-password-by-email
+### 1.8. GET /api/auth/reset-password
+**Chức năng**: Hiển thị form reset password (từ link trong email)
+
+**Auth**: Public
+
+**Query Parameters**:
+- `email`: string (required)
+- `token`: string (required)
+
+**Response 200 OK**: HTML page với form reset password
+
+---
+
+### 1.9. POST /api/auth/reset-password-by-email
 **Chức năng**: Reset mật khẩu bằng token từ email
 
 **Auth**: Public
 
-**Request Body**:
+**Request Body** (hoặc Query Parameters):
 ```json
 {
   "email": "string (required)",
   "token": "string (required, from email)",
-  "newPassword": "string (required, min 8 chars)"
+  "newPassword": "string (required, min 8 chars)",
+  "confirmPassword": "string? (optional)"
 }
 ```
 
@@ -330,7 +339,7 @@ if (accessTokenExpired()) {
 
 ---
 
-### 1.9. POST /api/auth/google-login
+### 1.10. POST /api/auth/google-login
 **Chức năng**: Đăng nhập bằng Google (cho user đã đăng ký)
 
 **Auth**: Public
@@ -346,7 +355,7 @@ if (accessTokenExpired()) {
 
 ---
 
-### 1.10. POST /api/auth/google-register
+### 1.11. POST /api/auth/google-register
 **Chức năng**: Đăng ký tài khoản mới bằng Google
 
 **Auth**: Public
@@ -403,7 +412,17 @@ if (accessTokenExpired()) {
 }
 ```
 
-**Response 204 No Content**
+**Note**: Để đổi mật khẩu, sử dụng endpoint `/api/users/change-password` riêng biệt.
+
+**Response 200 OK**:
+```json
+{
+  "userId": 123,
+  "email": "user@example.com",
+  "fullName": "Nguyễn Văn A (Updated)",
+  ...
+}
+```
 
 ---
 
@@ -547,7 +566,23 @@ if (accessTokenExpired()) {
 }
 ```
 
-**Response 200 OK**: UserViewDto
+**Response 204 No Content**
+
+---
+
+### 2.10. POST /api/users/{id}/activate (Admin Only)
+**Chức năng**: Kích hoạt dịch vụ cho user (chuyển từ INSTALLING sang ACTIVE)
+
+**Auth**: Required (AdminOnly)
+
+**Request Body**:
+```json
+{
+  "note": "string? (optional)"
+}
+```
+
+**Response 204 No Content**
 
 ---
 
@@ -573,36 +608,11 @@ if (accessTokenExpired()) {
 ---
 
 ### 3.2. GET /api/homes/{id}/profile
-**Chức năng**: Lấy thông tin đầy đủ về Home (Home Profile với metadata và thống kê)
+**Chức năng**: Lấy thông tin đầy đủ về Home (bao gồm Rooms, Devices, thống kê)
 
 **Auth**: Required (AdminOrCustomer, Customer chỉ xem Home của mình)
 
-**Response 200 OK**:
-```json
-{
-  "homeId": 1,
-  "name": "Nhà của tôi",
-  "ownerId": 123,
-  "securityStatus": "ARMED",
-  "rooms": [
-    {
-      "roomId": 1,
-      "homeId": 1,
-      "name": "Living Room",
-      "nodeIdentifier": "node_01",
-      "devices": [
-        {
-          "deviceId": 1,
-          "roomId": 1,
-          "name": "Living Room LED",
-          "deviceType": "LED",
-          "currentState": "{\"on\":true,\"brightness\":80}"
-        }
-      ]
-    }
-  ]
-}
-```
+**Response 200 OK**: HomeProfileDto (xem chi tiết trong models.md)
 
 ---
 
@@ -643,11 +653,23 @@ if (accessTokenExpired()) {
 {
   "name": "string (required)",
   "ownerId": "int (required, Customer ID)",
-  "securityStatus": "ARMED | DISARMED (required)"
+  "address": "string (required)",
+  "homeKey": "string? (optional, auto-generated if not provided)",
+  "description": "string? (optional)",
+  "securityStatus": "ARMED | DISARMED? (optional, default: DISARMED)",
+  "securityMode": "string? (optional)",
+  "homeType": "string? (optional)",
+  "area": "decimal? (optional)",
+  "floors": "int? (optional)",
+  "installationDate": "DateTime? (optional)",
+  "installedBy": "string? (optional)",
+  "installationNotes": "string? (optional)"
 }
 ```
 
-**Response 201 Created**: HomeViewDto
+**Response 201 Created**: HomeViewDto (bao gồm HomeKey được auto-generate)
+
+**Note**: Mỗi user chỉ được có tối đa một home. Nếu user đã có home, sẽ trả về 409 Conflict.
 
 ---
 
@@ -1069,7 +1091,40 @@ Bật/tắt đèn:
 
 ---
 
-### 7.4. DELETE /api/scenes/{id}
+### 7.4. GET /api/scenes/home/{homeId}/with-device-status
+**Chức năng**: Lấy danh sách Scenes kèm thông tin trạng thái thiết bị (online/offline)
+
+**Auth**: Required (Customer chỉ xem Scenes của Home mình sở hữu)
+
+**Response 200 OK**: Array of SceneWithDeviceStatusDto
+```json
+[
+  {
+    "id": 1,
+    "name": "Ra khỏi nhà",
+    "description": "Tắt đèn và còi cùng lúc",
+    "actionCount": 2,
+    "actions": [
+      {
+        "actionId": 1,
+        "deviceId": 4,
+        "deviceName": "Living Room LED",
+        "deviceType": "LED",
+        "actionType": "SET_STATUS",
+        "actionValue": "off",
+        "isOnline": true,
+        "lastActivity": "2025-01-15T10:30:00Z",
+        "currentState": "{\"on\":false}",
+        "isActive": true
+      }
+    ]
+  }
+]
+```
+
+---
+
+### 7.5. DELETE /api/scenes/{id}
 **Chức năng**: Xóa Scene
 
 **Auth**: Required (Customer chỉ xóa Scene của Home mình sở hữu)
@@ -1133,34 +1188,27 @@ Bật/tắt đèn:
 
 ---
 
-### 8.4. GET /api/sensordata/query
+### 8.4. GET /api/sensordata/device/{deviceId}
 **Chức năng**: Query Sensor Data theo Device, thời gian, và phân trang
 
 **Auth**: Required (Customer chỉ xem Sensor Data của Device trong Home mình sở hữu)
 
 **Query Parameters**:
-- `deviceId`: int (required)
 - `from`: DateTime? (optional, default: 7 days ago)
 - `to`: DateTime? (optional, default: now)
 - `page`: int (default: 1)
-- `pageSize`: int (default: 50)
+- `pageSize`: int (default: 200, max: 1000)
 
-**Response 200 OK**:
+**Response 200 OK**: Array of SensorDataViewDto
 ```json
-{
-  "items": [
-    {
-      "id": 1,
-      "deviceId": 5,
-      "value": "{\"temperature\":28.5,\"humidity\":65}",
-      "timeStamp": "2025-01-15T10:30:00"
-    }
-  ],
-  "page": 1,
-  "pageSize": 50,
-  "totalCount": 1000,
-  "totalPages": 20
-}
+[
+  {
+    "id": 1,
+    "deviceId": 5,
+    "value": "{\"temperature\":28.5,\"humidity\":65}",
+    "timeStamp": "2025-01-15T10:30:00"
+  }
+]
 ```
 
 ---
@@ -1207,7 +1255,7 @@ Bật/tắt đèn:
 
 ---
 
-### 9.3. POST /api/payment/create-payment-link
+### 9.3. POST /api/payment/create-link
 **Chức năng**: Tạo payment link để thanh toán (PayOS integration)
 
 **Auth**: Required (CustomerOnly)
@@ -1215,25 +1263,26 @@ Bật/tắt đèn:
 **Request Body**:
 ```json
 {
-  "packageId": "int (required)",
-  "description": "string? (optional)"
+  "packageId": "int? (optional, dùng khi mua gói chuẩn)",
+  "existingPaymentId": "int? (optional, dùng khi thanh toán custom bill)"
 }
 ```
+
+**Note**: Phải cung cấp một trong hai: `packageId` (mua gói chuẩn) hoặc `existingPaymentId` (thanh toán custom bill do admin tạo).
 
 **Response 200 OK**:
 ```json
 {
+  "paymentId": 123,
   "checkoutUrl": "https://pay.payos.vn/web/xxxxx",
-  "qrCode": "https://api.qrserver.com/v1/create-qr-code/?data=xxxxx",
-  "orderCode": 123456789,
+  "orderCode": "123456789",
   "amount": 500000,
-  "currency": "VND",
   "description": "Thanh toán gói Cơ Bản - 3 tháng"
 }
 ```
 
 **Frontend Flow**:
-1. User chọn package
+1. User chọn package hoặc có custom bill
 2. Frontend gọi API này để tạo payment link
 3. Redirect user đến `checkoutUrl` hoặc hiển thị QR code
 4. User thanh toán
@@ -1287,9 +1336,10 @@ Bật/tắt đèn:
 **Query Parameters**:
 - `orderCode`: string
 - `status`: string
-- Other PayOS params
+- `code`: string
+- `cancel`: bool
 
-**Response**: HTML page hoặc redirect đến Frontend success page
+**Response**: HTML page với thông báo thành công, tự động redirect về Frontend (nếu có config FrontendUrl)
 
 ---
 
@@ -1298,7 +1348,29 @@ Bật/tắt đèn:
 
 **Auth**: Public
 
-**Response**: HTML page hoặc redirect đến Frontend cancel page
+**Query Parameters**:
+- `orderCode`: string (optional)
+
+**Response**: HTML page với thông báo hủy, tự động redirect về Frontend (nếu có config FrontendUrl)
+
+---
+
+### 9.8. GET /api/payment/webhook (Public Webhook)
+**Chức năng**: Webhook endpoint nhận callback từ PayOS (tự động gọi bởi PayOS)
+
+**Auth**: Public (PayOS sẽ gọi endpoint này)
+
+**Request Body**: Raw JSON từ PayOS
+
+**Response 200 OK**:
+```json
+{
+  "success": true,
+  "message": "Payment processed successfully"
+}
+```
+
+**Note**: Endpoint này được PayOS gọi tự động, không cần gọi thủ công từ Frontend.
 
 ---
 
@@ -1312,8 +1384,8 @@ Bật/tắt đèn:
 **Request Body**:
 ```json
 {
-  "subject": "string (required)",
-  "message": "string (required)"
+  "title": "string (required, max 200 chars)",
+  "content": "string (required)"
 }
 ```
 
@@ -1322,10 +1394,9 @@ Bật/tắt đèn:
 {
   "requestId": 1,
   "userId": 123,
-  "subject": "Thiết bị không hoạt động",
-  "message": "Đèn LED không bật được",
-  "status": "PENDING",
-  "adminResponse": null,
+  "title": "Thiết bị không hoạt động",
+  "content": "Đèn LED không bật được",
+  "supportStatus": "PENDING",
   "createdAt": "2025-01-15T10:00:00",
   "resolvedAt": null
 }
@@ -1348,7 +1419,7 @@ Bật/tắt đèn:
 **Auth**: Required (AdminOnly)
 
 **Query Parameters**:
-- `status`: PENDING | IN_PROGRESS | RESOLVED | CLOSED? (optional)
+- `status`: PENDING | CONTACTED | RESOLVED | CLOSED? (optional)
 
 **Response 200 OK**: Array of SupportRequestViewDto
 
@@ -1371,20 +1442,100 @@ Bật/tắt đèn:
 **Request Body**:
 ```json
 {
-  "status": "PENDING | IN_PROGRESS | RESOLVED | CLOSED (required)",
-  "adminResponse": "string? (optional)"
+  "status": "PENDING | CONTACTED | RESOLVED | CLOSED (required)"
 }
 ```
 
 **Response 200 OK**: SupportRequestViewDto
 
+**Note**: Khi chuyển sang RESOLVED hoặc CLOSED, ResolvedAt sẽ được tự động set.
+
 ---
 
-## 11. Admin Operations
+## 11. Face Recognition
 
-### 11.1. Admin Device Mapping (Provisioning)
+### 11.1. POST /api/face/register
+**Chức năng**: Đăng ký khuôn mặt mới cho thành viên trong nhà
 
-#### POST /api/admindevicemapping (Admin Only)
+**Auth**: Required (Customer chỉ đăng ký cho nhà của mình)
+
+**Request**: multipart/form-data
+- `homeId`: int (required)
+- `memberName`: string (required)
+- `relation`: string? (optional)
+- `image`: IFormFile (required, image file)
+- `userId`: string? (optional)
+
+**Response 200 OK**:
+```json
+{
+  "statusCode": 200,
+  "message": "Face registered successfully.",
+  "data": {
+    "faceId": 1,
+    "homeId": 1,
+    "memberName": "Nguyễn Văn A",
+    "relation": "Owner",
+    "imageUrl": "https://...",
+    "awsFaceId": "abc123...",
+    "createdAt": "2025-01-15T10:00:00Z",
+    "userId": null
+  }
+}
+```
+
+---
+
+### 11.2. POST /api/face/verify
+**Chức năng**: Xác thực khuôn mặt từ camera/Jetson
+
+**Auth**: Required (Customer chỉ verify cho nhà của mình)
+
+**Request**: multipart/form-data
+- `homeId`: int (required)
+- `image`: IFormFile (required, image file)
+- `deviceId`: int? (optional)
+- `eventType`: string? (optional, default: "UNKNOWN")
+
+**Response 200 OK**:
+```json
+{
+  "statusCode": 200,
+  "message": "Face verified successfully",
+  "data": {
+    "isSuccess": true,
+    "isAuthorized": true,
+    "faceProfileId": 1,
+    "memberName": "Nguyễn Văn A",
+    "confidence": 0.95,
+    "message": "Face recognized",
+    "logId": 123,
+    "action": "GRANT_ACCESS"
+  }
+}
+```
+
+---
+
+### 11.3. POST /api/face/reset
+**Chức năng**: Xóa sạch dữ liệu khuôn mặt trên AWS (Admin only, cẩn thận)
+
+**Auth**: Required (AdminOnly)
+
+**Response 200 OK**:
+```json
+{
+  "message": "Collection reset successfully."
+}
+```
+
+---
+
+## 12. Admin Operations
+
+### 12.1. Admin Device Mapping (Provisioning)
+
+#### POST /api/admin/mappings (Admin Only)
 **Chức năng**: Provisioning device (map hardware device với virtual device)
 
 **Auth**: Required (AdminOnly)
@@ -1393,23 +1544,28 @@ Bật/tắt đèn:
 ```json
 {
   "deviceId": "int (required, Device ID in system)",
-  "hardwareId": "string (required, Hardware device identifier)"
+  "homeKey": "string (required, Home key từ config.json của Jetson)",
+  "nodeId": "string (required, Node ID từ STM32, ví dụ: NODE_01)",
+  "description": "string? (optional)"
 }
 ```
 
 **Response 201 Created**:
 ```json
 {
-  "mappingId": 1,
+  "id": 1,
   "deviceId": 5,
-  "hardwareId": "ESP32_ABC123",
+  "deviceName": "Living Room LED",
+  "hardwareIdentifier": "HOME_ABC123_NODE_01",
+  "nodeIdentifier": "NODE_01",
+  "homeKey": "HOME_ABC123",
   "createdAt": "2025-01-15T10:00:00"
 }
 ```
 
 ---
 
-#### GET /api/admindevicemapping (Admin Only)
+#### GET /api/admin/mappings (Admin Only)
 **Chức năng**: Lấy danh sách tất cả device mappings
 
 **Auth**: Required (AdminOnly)
@@ -1418,7 +1574,7 @@ Bật/tắt đèn:
 
 ---
 
-#### DELETE /api/admindevicemapping/{id} (Admin Only)
+#### DELETE /api/admin/mappings/{id} (Admin Only)
 **Chức năng**: Xóa device mapping (un-provision)
 
 **Auth**: Required (AdminOnly)
@@ -1427,10 +1583,10 @@ Bật/tắt đèn:
 
 ---
 
-### 11.2. Admin Payment Operations
+### 12.2. Admin Payment Operations
 
 #### POST /api/admin/payments/create-custom (Admin Only)
-**Chức năng**: Tạo payment thủ công cho Customer (không qua PayOS)
+**Chức năng**: Tạo custom payment bill cho Customer (không qua PayOS)
 
 **Auth**: Required (AdminOnly)
 
@@ -1438,27 +1594,24 @@ Bật/tắt đèn:
 ```json
 {
   "userId": "int (required)",
-  "amount": "decimal (required)",
-  "durationInMonths": "int (required)",
-  "method": "CASH | BANK_TRANSFER | ... (required)",
-  "description": "string? (optional)"
+  "amount": "decimal (required, > 0)",
+  "durationInMonths": "int (required, 1-120, default: 12)",
+  "description": "string (required, max 500 chars)"
 }
 ```
 
 **Response 201 Created**: ServicePaymentViewDto
 
+**Note**: Customer sẽ thấy bill này trong danh sách payments và có thể thanh toán qua PayOS.
+
 ---
 
 #### GET /api/admin/payments (Admin Only)
-**Chức năng**: Lấy tất cả payments trong hệ thống (phân trang)
+**Chức năng**: Lấy tất cả payments trong hệ thống
 
 **Auth**: Required (AdminOnly)
 
-**Query Parameters**:
-- `page`: int (default: 1)
-- `pageSize`: int (default: 10)
-
-**Response 200 OK**: Paginated ServicePaymentViewDto
+**Response 200 OK**: Array of ServicePaymentViewDto
 
 ---
 
@@ -1480,7 +1633,7 @@ Bật/tắt đèn:
 
 ---
 
-#### GET /api/admin/packages (Admin Only)
+#### GET /api/admin/payments/packages (Admin Only)
 **Chức năng**: Lấy danh sách tất cả packages (bao gồm inactive)
 
 **Auth**: Required (AdminOnly)
@@ -1489,9 +1642,9 @@ Bật/tắt đèn:
 
 ---
 
-## 12. Health & Monitoring
+## 13. Health & Monitoring
 
-### 12.1. GET /api/health/live
+### 13.1. GET /api/health/live
 **Chức năng**: Liveness check (kiểm tra API còn sống không)
 
 **Auth**: Public
@@ -1506,7 +1659,7 @@ Bật/tắt đèn:
 
 ---
 
-### 12.2. GET /api/health/ready (Admin Only)
+### 13.2. GET /api/health/ready (Admin Only)
 **Chức năng**: Readiness check (kiểm tra API sẵn sàng phục vụ request)
 
 **Auth**: Required (AdminOnly)
@@ -1522,212 +1675,384 @@ Bật/tắt đèn:
 
 ---
 
-### 12.3. GET /api/health/info
-**Chức năng**: Thông tin hệ thống cơ bản
+### 13.3. GET /api/health/info
+**Chức năng**: Thông tin hệ thống cơ bản (không chạy health checks)
 
 **Auth**: Required (AdminOrCustomer)
 
-**Response 200 OK**:
-```json
-{
-  "applicationName": "SmartHome API",
-  "version": "1.0.0",
-  "environment": "Development",
-  "timestamp": "2025-01-15T10:00:00Z"
-}
-```
+**Response 200 OK**: HealthReportDto với metadata (version, build info, database migrations, uptime)
 
 ---
 
-### 12.4. GET /api/health/stats (Admin Only)
-**Chức năng**: Thống kê hệ thống
+### 13.4. GET /api/health/stats (Admin Only)
+**Chức năng**: Thống kê hệ thống SmartHome
 
 **Auth**: Required (AdminOnly)
 
-**Response 200 OK**:
+**Response 200 OK**: SystemStatsDto
 ```json
 {
-  "totalUsers": 100,
   "totalHomes": 50,
+  "totalRooms": 150,
   "totalDevices": 200,
-  "timestamp": "2025-01-15T10:00:00Z"
+  "totalUsers": 100,
+  "activeUsers": 80,
+  "totalAutomations": 120,
+  "totalSensorDataRecords": 50000,
+  "activeDevices": 180,
+  "deviceTypeDistribution": {
+    "LED": 50,
+    "DHT": 30,
+    "PIR": 20
+  }
 }
 ```
 
 ---
 
-### 12.5. GET /api/health/detailed (Admin Only)
-**Chức năng**: Health check chi tiết (bao gồm dependencies)
+### 13.5. GET /api/health/detailed (Admin Only)
+**Chức năng**: Health check chi tiết (bao gồm health checks và statistics)
+
+**Auth**: Required (AdminOnly)
+
+**Response 200 OK**: SystemHealthDto (kết hợp health checks, statistics và metadata)
+
+---
+
+## 11. Face Recognition
+
+### 11.1. POST /api/face/register
+**Chức năng**: Đăng ký khuôn mặt mới cho thành viên trong nhà
+
+**Auth**: Required (Customer chỉ đăng ký cho nhà của mình)
+
+**Request**: multipart/form-data
+- `homeId`: int (required)
+- `memberName`: string (required)
+- `relation`: string? (optional)
+- `image`: IFormFile (required, image file)
+- `userId`: string? (optional)
+
+**Response 200 OK**:
+```json
+{
+  "statusCode": 200,
+  "message": "Face registered successfully.",
+  "data": {
+    "faceId": 1,
+    "homeId": 1,
+    "memberName": "Nguyễn Văn A",
+    "relation": "Owner",
+    "imageUrl": "https://...",
+    "awsFaceId": "abc123...",
+    "createdAt": "2025-01-15T10:00:00Z",
+    "userId": null
+  }
+}
+```
+
+---
+
+### 11.2. POST /api/face/verify
+**Chức năng**: Xác thực khuôn mặt từ camera/Jetson
+
+**Auth**: Required (Customer chỉ verify cho nhà của mình)
+
+**Request**: multipart/form-data
+- `homeId`: int (required)
+- `image`: IFormFile (required, image file)
+- `deviceId`: int? (optional)
+- `eventType`: string? (optional, default: "UNKNOWN")
+
+**Response 200 OK**:
+```json
+{
+  "statusCode": 200,
+  "message": "Face verified successfully",
+  "data": {
+    "isSuccess": true,
+    "isAuthorized": true,
+    "faceProfileId": 1,
+    "memberName": "Nguyễn Văn A",
+    "confidence": 0.95,
+    "message": "Face recognized",
+    "logId": 123,
+    "action": "GRANT_ACCESS"
+  }
+}
+```
+
+---
+
+### 11.3. POST /api/face/reset
+**Chức năng**: Xóa sạch dữ liệu khuôn mặt trên AWS (Admin only, cẩn thận)
 
 **Auth**: Required (AdminOnly)
 
 **Response 200 OK**:
 ```json
 {
-  "status": "Healthy",
-  "checks": {
-    "database": "Healthy",
-    "firebase": "Healthy",
-    "payos": "Healthy"
-  },
-  "timestamp": "2025-01-15T10:00:00Z"
+  "message": "Collection reset successfully."
 }
 ```
 
 ---
 
-## 16. Stats & Dashboard (Admin Only)
+## 12. Admin Operations
 
-### 13.1. GET /api/stats/dashboard-summary (Admin Only)
+### 12.1. Admin Device Mapping (Provisioning)
+
+#### POST /api/admin/mappings (Admin Only)
+**Chức năng**: Provisioning device (map hardware device với virtual device)
+
+**Auth**: Required (AdminOnly)
+
+**Request Body**:
+```json
+{
+  "deviceId": "int (required, Device ID in system)",
+  "homeKey": "string (required, Home key từ config.json của Jetson)",
+  "nodeId": "string (required, Node ID từ STM32, ví dụ: NODE_01)",
+  "description": "string? (optional)"
+}
+```
+
+**Response 201 Created**:
+```json
+{
+  "id": 1,
+  "deviceId": 5,
+  "deviceName": "Living Room LED",
+  "hardwareIdentifier": "HOME_ABC123_NODE_01",
+  "nodeIdentifier": "NODE_01",
+  "homeKey": "HOME_ABC123",
+  "createdAt": "2025-01-15T10:00:00"
+}
+```
+
+---
+
+#### GET /api/admin/mappings (Admin Only)
+**Chức năng**: Lấy danh sách tất cả device mappings
+
+**Auth**: Required (AdminOnly)
+
+**Response 200 OK**: Array of DeviceMappingViewDto
+
+---
+
+#### DELETE /api/admin/mappings/{id} (Admin Only)
+**Chức năng**: Xóa device mapping (un-provision)
+
+**Auth**: Required (AdminOnly)
+
+**Response 204 No Content**
+
+---
+
+### 12.2. Admin Payment Operations
+
+#### POST /api/admin/payments/create-custom (Admin Only)
+**Chức năng**: Tạo custom payment bill cho Customer (không qua PayOS)
+
+**Auth**: Required (AdminOnly)
+
+**Request Body**:
+```json
+{
+  "userId": "int (required)",
+  "amount": "decimal (required, > 0)",
+  "durationInMonths": "int (required, 1-120, default: 12)",
+  "description": "string (required, max 500 chars)"
+}
+```
+
+**Response 201 Created**: ServicePaymentViewDto
+
+**Note**: Customer sẽ thấy bill này trong danh sách payments và có thể thanh toán qua PayOS.
+
+---
+
+#### GET /api/admin/payments (Admin Only)
+**Chức năng**: Lấy tất cả payments trong hệ thống
+
+**Auth**: Required (AdminOnly)
+
+**Response 200 OK**: Array of ServicePaymentViewDto
+
+---
+
+#### GET /api/admin/payments/{id} (Admin Only)
+**Chức năng**: Lấy chi tiết payment theo ID
+
+**Auth**: Required (AdminOnly)
+
+**Response 200 OK**: ServicePaymentViewDto
+
+---
+
+#### GET /api/admin/payments/user/{userId} (Admin Only)
+**Chức năng**: Lấy lịch sử thanh toán của một User
+
+**Auth**: Required (AdminOnly)
+
+**Response 200 OK**: Array of ServicePaymentViewDto
+
+---
+
+#### GET /api/admin/payments/packages (Admin Only)
+**Chức năng**: Lấy danh sách tất cả packages (bao gồm inactive)
+
+**Auth**: Required (AdminOnly)
+
+**Response 200 OK**: Array of ServicePackageViewDto
+
+---
+
+## 13. Health & Monitoring
+
+### 13.1. GET /api/health/live
+**Chức năng**: Liveness check (kiểm tra API còn sống không)
+
+**Auth**: Public
+
+**Response 200 OK**: HealthReportDto với health checks có tag "live"
+
+---
+
+### 13.2. GET /api/health/ready (Admin Only)
+**Chức năng**: Readiness check (kiểm tra API sẵn sàng phục vụ request)
+
+**Auth**: Required (AdminOnly)
+
+**Response 200 OK**: HealthReportDto với health checks có tag "ready"
+**Response 503 Service Unavailable**: Nếu hệ thống chưa sẵn sàng
+
+---
+
+### 13.3. GET /api/health/info
+**Chức năng**: Thông tin hệ thống cơ bản (không chạy health checks)
+
+**Auth**: Required (AdminOrCustomer)
+
+**Response 200 OK**: HealthReportDto với metadata (version, build info, database migrations, uptime)
+
+---
+
+### 13.4. GET /api/health/stats (Admin Only)
+**Chức năng**: Thống kê hệ thống SmartHome
+
+**Auth**: Required (AdminOnly)
+
+**Response 200 OK**: SystemStatsDto
+```json
+{
+  "totalHomes": 50,
+  "totalRooms": 150,
+  "totalDevices": 200,
+  "totalUsers": 100,
+  "activeUsers": 80,
+  "totalAutomations": 120,
+  "totalSensorDataRecords": 50000,
+  "activeDevices": 180,
+  "deviceTypeDistribution": {
+    "LED": 50,
+    "DHT": 30,
+    "PIR": 20
+  }
+}
+```
+
+---
+
+### 13.5. GET /api/health/detailed (Admin Only)
+**Chức năng**: Health check chi tiết (bao gồm health checks và statistics)
+
+**Auth**: Required (AdminOnly)
+
+**Response 200 OK**: SystemHealthDto (kết hợp health checks, statistics và metadata)
+
+---
+
+## 14. Statistics & Dashboard (Admin Only)
+
+### 14.1. GET /api/stats/summary (Admin Only)
 **Chức năng**: Lấy tổng quan dashboard cho Admin
 
 **Auth**: Required (AdminOnly)
 
-**Response 200 OK**:
+**Response 200 OK**: DashboardSummaryDto
 ```json
 {
-  "totalUsers": 150,
-  "activeUsers": 120,
-  "totalHomes": 75,
-  "totalDevices": 300,
   "totalRevenue": 50000000,
-  "monthlyRevenue": 5000000,
+  "totalUsers": 150,
+  "activeSubscribers": 120,
+  "totalHomes": 75,
+  "totalRooms": 225,
+  "totalDevices": 300,
   "pendingSupportRequests": 10
 }
 ```
 
 ---
 
-### 13.2. GET /api/stats/revenue-chart (Admin Only)
-**Chức năng**: Lấy dữ liệu biểu đồ doanh thu
+### 14.2. GET /api/stats/revenue-chart (Admin Only)
+**Chức năng**: Lấy dữ liệu biểu đồ doanh thu theo tháng
 
 **Auth**: Required (AdminOnly)
 
 **Query Parameters**:
-- `from`: DateTime? (optional)
-- `to`: DateTime? (optional)
+- `year`: int? (optional, default: năm hiện tại)
 
-**Response 200 OK**:
+**Response 200 OK**: Array of RevenueChartDto (12 tháng)
 ```json
-{
-  "labels": ["Jan", "Feb", "Mar", "Apr", "May"],
-  "data": [5000000, 7000000, 6500000, 8000000, 9000000]
-}
+[
+  {
+    "month": 1,
+    "revenue": 5000000,
+    "monthName": "January"
+  },
+  {
+    "month": 2,
+    "revenue": 7000000,
+    "monthName": "February"
+  }
+]
 ```
 
 ---
 
-### 13.3. GET /api/stats/recent-transactions (Admin Only)
+### 14.3. GET /api/stats/recent-transactions (Admin Only)
 **Chức năng**: Lấy danh sách giao dịch gần đây
 
 **Auth**: Required (AdminOnly)
 
 **Query Parameters**:
-- `limit`: int (default: 10)
+- `count`: int (default: 5, max: 20)
 
 **Response 200 OK**: Array of RecentTransactionDto
-
----
-
-## 14. Face Recognition (Face Authentication)
-
-### 14.1. POST /api/faceauth/verify
-**Chức năng**: Xác thực khuôn mặt để mở cửa
-
-**Auth**: Public (không cần token - dùng cho IoT devices)
-
-**Request Body (multipart/form-data)**:
-- `image`: file (required) - Ảnh khuôn mặt cần xác thực
-
-**Response 200 OK**:
 ```json
-{
-  "isSuccess": true,
-  "message": "Face verified successfully",
-  "userId": "user123",
-  "confidence": 0.95,
-  "similarity": 0.89
-}
-```
-
-**Response 401 Unauthorized**:
-```json
-{
-  "isSuccess": false,
-  "message": "Face verification failed",
-  "userId": null,
-  "confidence": 0,
-  "similarity": 0
-}
+[
+  {
+    "paymentId": 123,
+    "userId": 45,
+    "userEmail": "user@example.com",
+    "userName": "Nguyễn Văn A",
+    "amount": 500000,
+    "currency": "VND",
+    "method": "PAYOS",
+    "description": "Thanh toán gói Cơ Bản",
+    "createdAt": "2025-01-15T10:00:00Z"
+  }
+]
 ```
 
 ---
 
-### 14.2. POST /api/faceauth/register
-**Chức năng**: Đăng ký khuôn mặt cho người dùng (chỉ Admin/Postman)
+## 15. Service Status History
 
-**Auth**: Public (nhưng chỉ dùng cho setup ban đầu)
-
-**Request Body (multipart/form-data)**:
-- `userId`: string (required) - ID của user cần đăng ký khuôn mặt
-- `image`: file (required) - Ảnh khuôn mặt để đăng ký
-
-**Response 200 OK**:
-```json
-{
-  "message": "Đã đăng ký thành công cho user: user123"
-}
-```
-
-**Response 400 Bad Request**:
-```json
-{
-  "message": "Đăng ký thất bại. Ảnh không rõ mặt hoặc lỗi hệ thống."
-}
-```
-
----
-
-## 15. Payment Webhooks (Internal)
-
-### 15.1. GET /api/payment/webhook
-**Chức năng**: Test webhook endpoint (PayOS verification)
-
-**Auth**: Public
-
-**Response 200 OK**:
-```json
-{
-  "success": true,
-  "message": "Webhook endpoint is accessible",
-  "timestamp": "2025-01-15T10:00:00Z",
-  "endpoint": "/api/payment/webhook"
-}
-```
-
----
-
-### 15.2. POST /api/payment/webhook
-**Chức năng**: Handle PayOS payment webhooks
-
-**Auth**: Public (PayOS callback)
-
-**Request Body**: Raw JSON từ PayOS webhook
-
-**Response 200 OK**:
-```json
-{
-  "success": true,
-  "message": "Payment processed successfully"
-}
-```
-
----
-
-## 16. Service Status History
-
-### 16.1. GET /api/servicestatushistory
-**Chức năng**: Lấy tất cả lịch sử thay đổi trạng thái dịch vụ (Admin only)
+### 15.1. GET /api/servicestatushistory (Admin Only)
+**Chức năng**: Lấy tất cả lịch sử thay đổi trạng thái dịch vụ
 
 **Auth**: Required (AdminOnly)
 
@@ -1735,16 +2060,29 @@ Bật/tắt đèn:
 
 ---
 
-### 16.2. GET /api/servicestatushistory/user/{userId}
-**Chức năng**: Lấy lịch sử thay đổi trạng thái theo User ID
+### 15.2. GET /api/servicestatushistory/user/{userId}
+**Chức năng**: Lấy lịch sử thay đổi trạng thái dịch vụ theo UserId
 
-**Auth**: Required (AdminOrCustomer, Customer chỉ xem lịch sử của mình)
+**Auth**: Required (User chỉ xem lịch sử của chính mình, Admin xem được tất cả)
 
 **Response 200 OK**: Array of ServiceStatusHistoryViewDto
+```json
+[
+  {
+    "id": 1,
+    "userId": 123,
+    "oldStatus": "INSTALLING",
+    "newStatus": "ACTIVE",
+    "changedBy": 1,
+    "note": "Service activated after installation",
+    "changedAt": "2025-01-15T10:00:00Z"
+  }
+]
+```
 
 ---
 
-### 16.3. GET /api/servicestatushistory/{id}
+### 15.3. GET /api/servicestatushistory/{id}
 **Chức năng**: Lấy chi tiết lịch sử thay đổi trạng thái theo ID
 
 **Auth**: Required (AdminOrCustomer)
@@ -1834,7 +2172,7 @@ async function apiRequest(url, options = {}) {
   if (Date.now() >= expiry) {
     // Refresh token
     const refreshToken = localStorage.getItem('refreshToken');
-    const response = await fetch('/api/auth/refresh', {
+    const response = await fetch('/api/auth/refresh-token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accessToken: token, refreshToken })
@@ -1933,7 +2271,26 @@ controlDevice(1, 'SET_BRIGHTNESS', '75');
 
 Nếu có thắc mắc về API, vui lòng liên hệ Backend Team.
 
-**Document Version**: 1.1
-**Last Updated**: 2026-01-15  
+**Document Version**: 2.0  
+**Last Updated**: 2025-01-19  
 **Backend Version**: ASP.NET Core 8.0
+
+---
+
+## 📝 Changelog
+
+### Version 2.0 (2025-01-19)
+- ✅ Cập nhật tất cả endpoints theo source code mới nhất
+- ✅ Thêm Face Recognition endpoints (register, verify, reset)
+- ✅ Cập nhật Authentication endpoints (refresh-token, reset-password form)
+- ✅ Cập nhật User Management (PUT /api/users/profile, POST /api/users/{id}/activate)
+- ✅ Cập nhật Home Management (GET /api/homes/{id}/profile, HomeKey trong DTOs)
+- ✅ Cập nhật Payment endpoints (create-link với packageId/existingPaymentId, webhook)
+- ✅ Thêm Scenes endpoint với device status (GET /api/scenes/home/{homeId}/with-device-status)
+- ✅ Cập nhật Admin endpoints (device mapping, custom payment)
+- ✅ Thêm Health endpoints (live, ready, info, stats, detailed)
+- ✅ Thêm Statistics & Dashboard endpoints
+- ✅ Thêm Service Status History endpoints
+- ✅ Cập nhật Support Requests (title/content thay vì subject/message)
+- ✅ Cập nhật Sensor Data query endpoint (GET /api/sensordata/device/{deviceId})
 
