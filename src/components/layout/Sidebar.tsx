@@ -21,6 +21,7 @@ import {
   MessageSquare,
   BarChart3,
   Link as LinkIcon,
+  Camera,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -74,6 +75,7 @@ export default function Sidebar() {
       { name: "Homes", href: "/homes", icon: Building2 },
       { name: "Rooms", href: "/rooms", icon: DoorOpen },
       { name: "Devices", href: "/devices", icon: Cpu },
+      { name: "Face Recognition", href: "/face", icon: Camera },
       { name: "Automations", href: "/automations", icon: Zap },
       { name: "Scenes", href: "/scenes", icon: Palette },
       { name: "Sensor Data", href: "/sensor-data", icon: Thermometer },

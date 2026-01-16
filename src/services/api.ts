@@ -53,6 +53,9 @@ import {
   RecentTransaction,
   DeviceMapping,
   CreateDeviceMappingRequest,
+  ServiceStatusHistory,
+  FaceRegisterResponse,
+  FaceVerifyResponse,
 } from "@/types";
 
 // Base URL cho backend, ưu tiên lấy từ biến môi trường NEXT_PUBLIC_API_URL
@@ -158,6 +161,7 @@ class ApiService {
       address: api?.address || api?.Address, // optional in FE
       homeKey,
       ownerId,
+      homeKey: api?.HomeKey ?? api?.homeKey ?? api?.Home_Key ?? undefined,
       securityStatus,
       createdAt,
       updatedAt,
@@ -194,6 +198,7 @@ class ApiService {
       installationDate: api?.InstallationDate ?? api?.installationDate,
       installedBy: api?.InstalledBy ?? api?.installedBy,
       installationNotes: api?.InstallationNotes ?? api?.installationNotes,
+      homeKey: api?.HomeKey ?? api?.homeKey ?? api?.Home_Key ?? undefined,
       area: api?.Area ?? api?.area,
       floors: api?.Floors ?? api?.floors,
       homeType: api?.HomeType ?? api?.homeType,
@@ -569,46 +574,55 @@ class ApiService {
       }
 
       console.log(`Response status: ${response.status}`);
+      // Read response body as text first so we can log raw body on 500s or parse errors
+      const contentType = response.headers.get("content-type");
+      const rawText = await response.text().catch(() => "");
+      let responseData: any = undefined;
+      if (contentType && contentType.includes("application/json")) {
+        try {
+          responseData = rawText ? JSON.parse(rawText) : {};
+        } catch (parseError) {
+          console.warn("Failed to parse JSON response body:", parseError, "rawText:", rawText);
+          responseData = { message: rawText || "Invalid JSON response" };
+        }
+      } else {
+        responseData = { message: rawText || "" };
+      }
 
-      // Handle 401 Unauthorized - try to refresh token
+      // Handle 401 Unauthorized - try to refresh token (use responseData for messages)
       if (response.status === 401) {
         // Don't try to refresh if we're already refreshing or if this is a refresh token request
         if (endpoint.includes("/Auth/refresh-token")) {
           // This is a refresh token request itself, don't retry
           let errorMessage = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
-          try {
-            const errorData = await response.json();
-            if (errorData?.detail || errorData?.Message || errorData?.message) {
-              errorMessage = errorData.detail || errorData.Message || errorData.message;
-            }
-          } catch (e) {
-            // Use default message
+          if (responseData?.detail || responseData?.Message || responseData?.message) {
+            errorMessage = responseData.detail || responseData.Message || responseData.message;
           }
-          
+
           // Clear tokens
           if (typeof window !== "undefined") {
             localStorage.removeItem("authToken");
             localStorage.removeItem("refreshToken");
             localStorage.removeItem("user");
           }
-          
+
           throw new Error(errorMessage);
         }
 
-        const refreshTokenValue = typeof window !== "undefined" 
-          ? localStorage.getItem("refreshToken") 
+        const refreshTokenValue = typeof window !== "undefined"
+          ? localStorage.getItem("refreshToken")
           : null;
-        
+
         if (refreshTokenValue && token && !this.isRefreshing) {
           // Use existing refresh promise if available
           if (!this.refreshPromise) {
             this.isRefreshing = true;
             this.refreshPromise = this.performTokenRefresh(token, refreshTokenValue);
           }
-          
+
           try {
             const newAccessToken = await this.refreshPromise;
-            
+
             if (newAccessToken) {
               // Retry original request with new token
               const retryConfig: RequestInit = {
@@ -618,18 +632,18 @@ class ApiService {
                   Authorization: `Bearer ${newAccessToken}`,
                 },
               };
-              
+
               console.log("Retrying request with new token...");
               const retryResponse = await fetch(primaryUrl, retryConfig);
-              
+
               if (retryResponse.ok) {
-                const contentType = retryResponse.headers.get("content-type");
-                if (contentType && contentType.includes("application/json")) {
-                  const retryData = await retryResponse.json();
+                const retryContentType = retryResponse.headers.get("content-type");
+                const retryText = await retryResponse.text().catch(() => "");
+                if (retryContentType && retryContentType.includes("application/json")) {
+                  const retryData = retryText ? JSON.parse(retryText) : {};
                   return retryData as T;
                 } else {
-                  const text = await retryResponse.text();
-                  return { message: text } as T;
+                  return { message: retryText } as T;
                 }
               } else if (retryResponse.status === 401) {
                 // Still 401 after refresh, clear tokens
@@ -654,60 +668,48 @@ class ApiService {
             this.refreshPromise = null;
           }
         }
-        
+
         // If no refresh token or refresh failed, throw error
         let errorMessage = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
-        try {
-          const errorData = await response.json();
-          if (errorData?.detail || errorData?.Message || errorData?.message) {
-            errorMessage = errorData.detail || errorData.Message || errorData.message;
-          }
-        } catch (e) {
-          // Use default message
+        if (responseData?.detail || responseData?.Message || responseData?.message) {
+          errorMessage = responseData.detail || responseData.Message || responseData.message;
         }
         throw new Error(errorMessage);
       }
 
+      // If response not ok, throw with detailed info (include raw body)
       if (!response.ok) {
         let errorMessage = `HTTP error! status: ${response.status}`;
-        try {
-          const errorData = await response.json();
-          // Ưu tiên các field message chuẩn từ backend (Message / message) vàErrors nếu có
-          if (errorData) {
-            const baseMessage =
-              errorData.message ||
-              errorData.Message ||
-              errorData.detail ||
-              errorMessage;
-            const errorsArray: string[] =
-              errorData.errors ||
-              errorData.Errors ||
-              [];
-            const errorsText =
-              Array.isArray(errorsArray) && errorsArray.length > 0
-                ? `: ${errorsArray.join(" | ")}`
-                : "";
-            errorMessage = `${baseMessage}${errorsText}`;
-          }
-        } catch (parseError) {
-          // If response is not JSON, use status text
-          errorMessage = response.statusText || errorMessage;
+        if (responseData) {
+          const baseMessage =
+            responseData.message ||
+            responseData.Message ||
+            responseData.detail ||
+            errorMessage;
+          const errorsArray: string[] =
+            responseData.errors ||
+            responseData.Errors ||
+            [];
+          const errorsText =
+            Array.isArray(errorsArray) && errorsArray.length > 0
+              ? `: ${errorsArray.join(" | ")}`
+              : "";
+          errorMessage = `${baseMessage}${errorsText}`;
+        } else if (response.statusText) {
+          errorMessage = response.statusText;
         }
+
+        console.error("Non-OK response body (raw):", rawText);
         throw new Error(errorMessage);
       }
 
-      const contentType = response.headers.get("content-type");
-      console.log("Response content-type:", contentType);
-
+      // Successful response - return parsed JSON or text
       if (contentType && contentType.includes("application/json")) {
-        const jsonData = await response.json();
-        console.log("JSON response data:", jsonData);
-        return jsonData;
+        console.log("JSON response data:", responseData);
+        return responseData as T;
       } else {
-        // Handle non-JSON responses
-        const text = await response.text();
-        console.log("Non-JSON response text:", text);
-        return { message: text } as T;
+        console.log("Non-JSON response text:", rawText);
+        return { message: rawText } as T;
       }
     } catch (error: any) {
       console.error(`API request failed for ${endpoint}:`, error);
@@ -1061,6 +1063,37 @@ class ApiService {
     return (list || []).map((u) => this.mapUserFromApi(u));
   }
 
+  /**
+   * Try to fetch users who do not have a home assigned from backend.
+   * Falls back to fetching all users and filtering client-side if the endpoint is not available.
+   */
+  async getUsersWithoutHome(): Promise<User[]> {
+    // Try a few possible backend endpoint names that teams might implement
+    const candidateEndpoints = ["/Users/without-home", "/Users/withoutHome", "/Users/no-home", "/Users/without-home-list"];
+    for (const ep of candidateEndpoints) {
+      try {
+        const list = await this.request<any[]>(ep);
+        return (list || []).map((u) => this.mapUserFromApi(u));
+      } catch (err) {
+        // ignore and try next
+      }
+    }
+
+    // Fallback: fetch all users and all homes, then filter users who are not owners of any home
+    try {
+      const [usersList, homesList] = await Promise.all([this.getUsers(), this.getAllHomes()]);
+      const owners = new Set(homesList.map((h) => (h.ownerId || "").toString()));
+      return usersList.filter((u) => !owners.has((u.id || u.userId || "").toString()));
+    } catch (err) {
+      // As last resort, return all users
+      try {
+        return await this.getUsers();
+      } catch {
+        return [];
+      }
+    }
+  }
+
   async getUserById(id: string): Promise<User> {
     const data = await this.request<any>(`/Users/${id}`);
     return this.mapUserFromApi(data);
@@ -1114,6 +1147,19 @@ class ApiService {
   async toggleUserStatus(id: string, serviceStatus: string): Promise<void> {
     const payload = {
       ServiceStatus: serviceStatus,
+    };
+    await this.request<void>(`/Users/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  }
+  /**
+   * New explicit method per API spec: update user service status.
+   * Keeps same behavior as toggleUserStatus but uses clearer name.
+   */
+  async updateUserStatus(id: string, serviceStatus: string): Promise<void> {
+    const payload = {
+      serviceStatus: serviceStatus,
     };
     await this.request<void>(`/Users/${id}/status`, {
       method: "PATCH",
@@ -1401,29 +1447,74 @@ class ApiService {
       throw new Error("OwnerId is required and must be a valid number");
     }
 
-    const payload = {
+    // Coerce/normalize fields to types the backend expects (numbers and ISO datetimes)
+    const normalizedArea =
+      homeData.area !== undefined && homeData.area !== null && homeData.area !== 0
+        ? Number(homeData.area)
+        : undefined;
+    const normalizedFloors =
+      homeData.floors !== undefined && homeData.floors !== null && homeData.floors !== 0
+        ? Number(homeData.floors)
+        : undefined;
+
+    let normalizedInstallationDate: string | undefined = undefined;
+    if (homeData.installationDate) {
+      try {
+        const d = new Date(homeData.installationDate);
+        if (!isNaN(d.getTime())) {
+          // Ensure backend receives Zulu/ISO format
+          normalizedInstallationDate = d.toISOString();
+        } else {
+          // Fallback: send as provided string
+          normalizedInstallationDate = homeData.installationDate;
+        }
+      } catch {
+        normalizedInstallationDate = homeData.installationDate;
+      }
+    }
+
+    // Generate HomeKey if not provided - use crypto.randomUUID if available, fallback to random string
+    const homeKeyToUse = homeData.homeKey ||
+      (typeof crypto !== "undefined" && typeof (crypto as any).randomUUID === "function"
+        ? (crypto as any).randomUUID()
+        : "hm-" + Math.random().toString(36).slice(2, 10) + "-" + Date.now().toString(36));
+
+    const payload: any = {
       Name: homeData.name,
       OwnerId: ownerIdNum,
       SecurityStatus: homeData.securityStatus || "DISARMED",
+      HomeKey: homeKeyToUse,
       ...(homeData.address ? { Address: homeData.address } : {}),
       ...(homeData.description ? { Description: homeData.description } : {}),
       ...(homeData.securityMode ? { SecurityMode: homeData.securityMode } : {}),
       ...(homeData.homeType ? { HomeType: homeData.homeType } : {}),
-      ...(homeData.area !== undefined ? { Area: homeData.area } : {}),
-      ...(homeData.floors !== undefined ? { Floors: homeData.floors } : {}),
-      ...(homeData.installationDate
-        ? { InstallationDate: homeData.installationDate }
-        : {}),
+      ...(normalizedArea !== undefined ? { Area: normalizedArea } : {}),
+      ...(normalizedFloors !== undefined ? { Floors: normalizedFloors } : {}),
+      ...(normalizedInstallationDate ? { InstallationDate: normalizedInstallationDate } : {}),
       ...(homeData.installedBy ? { InstalledBy: homeData.installedBy } : {}),
-      ...(homeData.installationNotes
-        ? { InstallationNotes: homeData.installationNotes }
-        : {}),
+      ...(homeData.installationNotes ? { InstallationNotes: homeData.installationNotes } : {}),
     };
-    const created = await this.request<any>("/Homes", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    return this.mapHomeFromApi(created);
+    try {
+      console.log("[ApiService] createHome - payload:", payload);
+      console.log(
+        "[ApiService] createHome - payload JSON:",
+        JSON.stringify(payload)
+      );
+      const created = await this.request<any>("/Homes", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      console.log("[ApiService] createHome - response:", created);
+      return this.mapHomeFromApi(created);
+    } catch (error: any) {
+      console.error("[ApiService] createHome - error:", {
+        message: error?.message,
+        stack: error?.stack,
+        error,
+      });
+      // Re-throw to preserve original behavior for UI
+      throw error;
+    }
   }
 
   async updateHome(id: string, homeData: UpdateHomeRequest): Promise<void> {
@@ -2145,6 +2236,7 @@ class ApiService {
           1: "PAID",
           2: "FAILED",
           3: "CANCELLED",
+          4: "SUCCESS",
         };
         status = statusMap[api.Status] || api.Status;
       } else {
@@ -2263,6 +2355,99 @@ class ApiService {
       body: JSON.stringify(payload),
     });
     return this.mapServicePaymentFromApi(data);
+  }
+
+  // Service Status History APIs
+  async getServiceStatusHistory(): Promise<ServiceStatusHistory[]> {
+    const data = await this.request<any[]>("/ServiceStatusHistory");
+    return (data || []).map((item) => ({
+      Id: item?.Id ?? item?.id ?? 0,
+      UserId: item?.UserId ?? item?.userId ?? 0,
+      OldStatus: item?.OldStatus ?? item?.oldStatus ?? "",
+      NewStatus: item?.NewStatus ?? item?.newStatus ?? "",
+      ChangedBy: item?.ChangedBy ?? item?.changedBy ?? 0,
+      Note: item?.Note ?? item?.note ?? null,
+      ChangedAt: item?.ChangedAt ?? item?.changedAt ?? new Date().toISOString(),
+    }));
+  }
+
+  async getServiceStatusHistoryByUser(userId: number): Promise<ServiceStatusHistory[]> {
+    const data = await this.request<any[]>(`/ServiceStatusHistory/user/${userId}`);
+    return (data || []).map((item) => ({
+      Id: item?.Id ?? item?.id ?? 0,
+      UserId: item?.UserId ?? item?.userId ?? 0,
+      OldStatus: item?.OldStatus ?? item?.oldStatus ?? "",
+      NewStatus: item?.NewStatus ?? item?.newStatus ?? "",
+      ChangedBy: item?.ChangedBy ?? item?.changedBy ?? 0,
+      Note: item?.Note ?? item?.note ?? null,
+      ChangedAt: item?.ChangedAt ?? item?.changedAt ?? new Date().toISOString(),
+    }));
+  }
+
+  async getServiceStatusHistoryById(id: number): Promise<ServiceStatusHistory> {
+    const item = await this.request<any>(`/ServiceStatusHistory/${id}`);
+    return {
+      Id: item?.Id ?? item?.id ?? 0,
+      UserId: item?.UserId ?? item?.userId ?? 0,
+      OldStatus: item?.OldStatus ?? item?.oldStatus ?? "",
+      NewStatus: item?.NewStatus ?? item?.newStatus ?? "",
+      ChangedBy: item?.ChangedBy ?? item?.changedBy ?? 0,
+      Note: item?.Note ?? item?.note ?? null,
+      ChangedAt: item?.ChangedAt ?? item?.changedAt ?? new Date().toISOString(),
+    };
+  }
+
+  // FaceAuth (multipart)
+  async registerFace(data: {
+    homeId: number;
+    memberName: string;
+    relation?: string;
+    image: File;
+    userId?: string;
+  }): Promise<FaceRegisterResponse> {
+    const token = this.getAuthToken();
+    const url = `${API_BASE_URL}/Face/register`;
+    const headers: Record<string,string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const form = new FormData();
+    form.append("homeId", data.homeId.toString());
+    form.append("memberName", data.memberName);
+    if (data.relation) form.append("relation", data.relation);
+    form.append("image", data.image);
+    if (data.userId) form.append("userId", data.userId);
+
+    const resp = await fetch(url, { method: "POST", body: form, headers });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(()=>"");
+      throw new Error(txt || `HTTP ${resp.status}`);
+    }
+    return await resp.json();
+  }
+
+  async verifyFace(data: {
+    homeId: number;
+    deviceId?: number;
+    eventType: "RECOGNIZED" | "INTRUDER" | "UNKNOWN";
+    image: File;
+  }): Promise<FaceVerifyResponse> {
+    const token = this.getAuthToken();
+    const url = `${API_BASE_URL}/Face/verify`;
+    const headers: Record<string,string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const form = new FormData();
+    form.append("homeId", data.homeId.toString());
+    if (data.deviceId) form.append("deviceId", data.deviceId.toString());
+    form.append("eventType", data.eventType);
+    form.append("image", data.image);
+
+    const resp = await fetch(url, { method: "POST", body: form, headers });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(()=>"");
+      throw new Error(txt || `HTTP ${resp.status}`);
+    }
+    return await resp.json();
   }
 
   async getAllPayments(): Promise<ServicePayment[]> {

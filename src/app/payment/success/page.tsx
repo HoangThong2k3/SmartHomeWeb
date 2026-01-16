@@ -90,11 +90,49 @@ function PaymentSuccessContent() {
         }
       } catch (error: any) {
         console.error("Failed to verify payment:", error);
-        setStatus("error");
-        setMessage(
-          error?.message ||
-            "Không thể xác minh giao dịch. Vui lòng thử lại hoặc liên hệ bộ phận hỗ trợ."
-        );
+        // Try fallback: poll user's payments for a matching transaction (webhook may have processed already)
+        try {
+          const orderCode = queryObject.orderCode || queryObject.OrderCode || queryObject.order;
+          const maxAttempts = 5;
+          let found = false;
+          for (let i = 0; i < maxAttempts && !found; i++) {
+            const payments = await apiService.getMyPayments();
+            const match = (payments || []).find((p) => {
+              const tr = (p.transactionRef || "").toString();
+              const pid = (p.paymentId || "").toString();
+              const status = typeof p.status === "string" ? p.status.toUpperCase() : p.status;
+              const okStatus = status === "PAID" || status === "SUCCESS";
+              return okStatus && (tr === orderCode || pid === orderCode);
+            });
+            if (match) {
+              found = true;
+              setStatus("success");
+              setMessage(
+                `Thanh toán đã được ghi nhận (Payment ID: ${match.paymentId}). Cảm ơn bạn!`
+              );
+              // refresh user to pick up serviceStatus
+              try { await refreshUser(); } catch {}
+              break;
+            }
+            // wait 1s before next attempt
+            await new Promise((res) => setTimeout(res, 1000));
+          }
+
+          if (!found) {
+            setStatus("error");
+            setMessage(
+              error?.message ||
+                "Không thể xác minh giao dịch. Vui lòng thử lại hoặc liên hệ bộ phận hỗ trợ."
+            );
+          }
+        } catch (pollErr) {
+          console.error("Fallback polling failed:", pollErr);
+          setStatus("error");
+          setMessage(
+            error?.message ||
+              "Không thể xác minh giao dịch. Vui lòng thử lại hoặc liên hệ bộ phận hỗ trợ."
+          );
+        }
       }
     };
 

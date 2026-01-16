@@ -755,7 +755,7 @@ export default function SensorDataPage() {
                 )}
 
                 {/* Add Data button */}
-                {user?.role === "admin" && (
+                {(user as any)?.role === "admin" && (
                   <button
                     onClick={() => setShowCreateForm(true)}
                     className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"

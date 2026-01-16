@@ -73,16 +73,27 @@ export default function ServiceManagementPage() {
   const getStatusDisplay = (status?: string) => {
     if (!status) return { text: "Chưa có dịch vụ", color: "gray" };
     
-    if (status === "ACTIVE" || status === "Hoàn tất" || status.includes("Hoàn tất")) {
+    // Normalize and map service statuses to display text/colors
+    if (status === "ACTIVE" || status === "Hoàn tất" || status?.toUpperCase() === "ACTIVE") {
       return { text: "Đang hoạt động", color: "green" };
     }
-    if (status === "Đang cài đặt" || status.includes("Đang cài đặt")) {
+    if (
+      status === "INSTALLING" ||
+      status === "Đang cài đặt" ||
+      status?.toUpperCase() === "INSTALLING"
+    ) {
       return { text: "Đang cài đặt", color: "yellow" };
     }
-    if (status === "SUSPENDED" || status === "Tạm dừng") {
-      return { text: "Tạm dừng", color: "orange" };
+    if (
+      status === "INACTIVE" ||
+      status === "SUSPENDED" ||
+      status === "Chưa có dịch vụ" ||
+      status?.toUpperCase() === "INACTIVE" ||
+      status?.toUpperCase() === "SUSPENDED"
+    ) {
+      return { text: "Chưa kích hoạt", color: "gray" };
     }
-    if (status === "EXPIRED" || status === "Hết hạn") {
+    if (status === "EXPIRED" || status === "Hết hạn" || status?.toUpperCase() === "EXPIRED") {
       return { text: "Hết hạn", color: "red" };
     }
     

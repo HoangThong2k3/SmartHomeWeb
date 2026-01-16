@@ -59,7 +59,9 @@ export interface User {
   email: string;
   role: "admin" | "customer";
   phoneNumber?: string;
-  serviceStatus?: string; // ACTIVE, SUSPENDED, EXPIRED, etc.
+  // Standardized service statuses per new API spec:
+  // "INACTIVE" | "INSTALLING" | "ACTIVE" | "EXPIRED"
+  serviceStatus?: "INACTIVE" | "INSTALLING" | "ACTIVE" | "EXPIRED" | string;
   serviceExpiryDate?: string; // ISO string
   address?: string;
   currentPackageId?: number;
@@ -83,7 +85,7 @@ export interface UpdateUserRequest {
   email?: string;
   role?: "admin" | "customer";
   phoneNumber?: string;
-  serviceStatus?: string;
+  serviceStatus?: "INACTIVE" | "INSTALLING" | "ACTIVE" | "EXPIRED" | string;
   serviceExpiryDate?: string;
   address?: string;
   currentPackageId?: number;
@@ -96,6 +98,7 @@ export interface Home {
   address?: string;
   homeKey?: string; // HomeKey for IoT device provisioning
   ownerId: string;
+  homeKey?: string;
   securityStatus?: string;
   owner?: User;
   createdAt: string;
@@ -105,6 +108,7 @@ export interface Home {
 export interface CreateHomeRequest {
   name: string;
   ownerId: string;
+  homeKey?: string;
   securityStatus?: string;
   address?: string;
   description?: string;
@@ -144,6 +148,7 @@ export interface HomeProfile {
   installationDate?: string;
   installedBy?: string;
   installationNotes?: string;
+  homeKey?: string;
   area?: number;
   floors?: number;
   homeType?: string;
@@ -465,7 +470,8 @@ export interface PaymentLinkResponse {
 }
 
 // Status can be number (enum) or string from backend
-export type PaymentStatus = "PENDING" | "PAID" | "FAILED" | "CANCELLED" | number;
+// Status can be number (enum) or string from backend
+export type PaymentStatus = "PENDING" | "PAID" | "SUCCESS" | "FAILED" | "CANCELLED" | number;
 
 export interface ServicePayment {
   paymentId: number; // From PaymentId
@@ -592,4 +598,45 @@ export interface RecentTransaction {
   method: string;
   description: string;
   createdAt: string;
+}
+
+// Service Status History
+export interface ServiceStatusHistory {
+  Id: number;
+  UserId: number;
+  OldStatus: string;
+  NewStatus: string;
+  ChangedBy: number; // Admin userId who changed
+  Note?: string | null;
+  ChangedAt: string; // ISO datetime
+}
+
+// Face Auth payloads (frontend)
+export interface FaceVerifyResponse {
+  statusCode: number;
+  message: string;
+  data: {
+    isSuccess: boolean;
+    isAuthorized: boolean;
+    faceProfileId?: number | null;
+    memberName?: string | null;
+    confidence: number;
+    logId: number;
+    action: "ALLOW_ENTRY" | "DENY_ENTRY" | "ALERT_OWNER";
+  };
+}
+
+export interface FaceRegisterResponse {
+  statusCode: number;
+  message: string;
+  data: {
+    faceId: number;
+    homeId: number;
+    memberName: string;
+    relation?: string;
+    imageUrl: string;
+    awsFaceId: string;
+    createdAt: string;
+    userId?: string;
+  };
 }
