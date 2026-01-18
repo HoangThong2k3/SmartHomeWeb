@@ -43,19 +43,14 @@ export default function SensorDataPage() {
   } = useServiceAccess();
   const { toUTC, fromUTC, formatForDisplay, getCurrentLocalTime, userTimezone } = useTimezone();
 
-  // Filter states - Declare BEFORE useRealTimePolling to avoid temporal dead zone
   const [selectedDevices, setSelectedDevices] = useState<number[]>([]);
-  const [selectedDevice, setSelectedDevice] = useState<number | null>(null); // Keep for backward compatibility with chart
+  const [selectedDevice, setSelectedDevice] = useState<number | null>(null);
   const [dateRange, setDateRange] = useState({ from: "", to: "" });
   const [page, setPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(50); // Smaller initial page size for lazy loading
-
-  // Advanced filter states
+  const [pageSize, setPageSize] = useState<number>(50);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [timeRangePreset, setTimeRangePreset] = useState<string>("");
   const [selectedHomes, setSelectedHomes] = useState<string[]>([]);
-
-  // Data states - MUST be declared BEFORE using them in useMemo
   const [devices, setDevices] = useState<Device[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [homes, setHomes] = useState<Home[]>([]);
@@ -66,18 +61,13 @@ export default function SensorDataPage() {
   const [totalRecords, setTotalRecords] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(0);
 
-  // Get NodeId from Room (via Device.RoomId) for Firebase Realtime Database
   const getNodeIdFromDevice = useCallback((deviceId: number | null): string | null => {
     if (!deviceId) return null;
-    
-    // Find device to get RoomId
     const device = devices.find((d) => d.DeviceId === deviceId);
     if (!device) {
       console.warn(`[SensorDataPage] Device ${deviceId} not found`);
       return null;
     }
-
-    // Find room to get NodeIdentifier
     const room = rooms.find((r) => Number(r.id) === device.RoomId);
     if (!room) {
       console.warn(`[SensorDataPage] Room ${device.RoomId} not found for Device ${deviceId}`);
@@ -94,41 +84,34 @@ export default function SensorDataPage() {
     }
   }, [devices, rooms]);
 
-  // Calculate selectedNodeId using useMemo to avoid temporal dead zone
   const selectedNodeId = useMemo(() => {
     return getNodeIdFromDevice(selectedDevice);
   }, [selectedDevice, getNodeIdFromDevice]);
 
-  // Firebase Realtime Database subscription for latest sensor data
   const {
     data: firebaseTelemetryData,
     isConnected: isFirebaseConnected,
     error: firebaseError,
     lastUpdated: firebaseLastUpdated,
   } = useFirebaseRealtime(selectedNodeId, {
-    enabled: !!selectedNodeId, // Only enable if we have a NodeId
+    enabled: !!selectedNodeId,
     onError: (error) => {
       console.warn("[SensorDataPage] Firebase realtime error:", error.message);
     },
   });
 
-  // Removed: Real-time polling for latest sensor data (no longer using API, only Firebase)
-
-  // Prepare latestData state early so displayLatestData can reference it
   const [latestData, setLatestData] = useState<SensorData | null>(null);
   
-  // Convert Firebase telemetry data to SensorData format for display
   const convertFirebaseDataToSensorData = (telemetry: any, deviceId: number): SensorData | null => {
     if (!telemetry) return null;
     try {
-      // Convert Firebase telemetry to JSON string (same format as backend API)
       const valueString = JSON.stringify(telemetry);
       const timestamp = telemetry.timestamp 
         ? new Date(telemetry.timestamp).toISOString() 
         : new Date().toISOString();
       
       return {
-        Id: 0, // Firebase doesn't have ID, use 0 as placeholder
+        Id: 0,
         DeviceId: deviceId,
         Value: valueString,
         TimeStamp: timestamp,
@@ -139,14 +122,11 @@ export default function SensorDataPage() {
     }
   };
 
-  // Format sensor value based on DeviceType for better UI display
   const formatSensorValue = (value: string, deviceType?: string): React.ReactNode => {
     if (!value) return <span className="text-gray-400">No data</span>;
 
     try {
       const parsed = JSON.parse(value);
-      
-      // If not an object, display as-is
       if (typeof parsed !== "object" || parsed === null) {
         return (
           <pre className="text-xs bg-white rounded p-2 border overflow-x-auto whitespace-pre-wrap">
@@ -154,11 +134,7 @@ export default function SensorDataPage() {
           </pre>
         );
       }
-
-      // Format based on DeviceType
       const deviceTypeUpper = (deviceType || "").toUpperCase();
-      
-      // DHT Sensor: Temperature & Humidity
       if (deviceTypeUpper.includes("DHT") || deviceTypeUpper.includes("TEMPERATURE")) {
         const items = [];
         if (typeof parsed.temp === "number") {
@@ -181,8 +157,6 @@ export default function SensorDataPage() {
           return <div className="space-y-1">{items}</div>;
         }
       }
-
-      // MQ2 Gas Sensor
       if (deviceTypeUpper.includes("MQ2") || deviceTypeUpper.includes("GAS_MQ2")) {
         if (typeof parsed.gas_mq2 === "number") {
           return (
@@ -193,8 +167,6 @@ export default function SensorDataPage() {
           );
         }
       }
-
-      // MQ135 Gas Sensor
       if (deviceTypeUpper.includes("MQ135") || deviceTypeUpper.includes("GAS_MQ135")) {
         if (typeof parsed.gas_mq135 === "number") {
           return (
@@ -205,8 +177,6 @@ export default function SensorDataPage() {
           );
         }
       }
-
-      // Motion Sensor
       if (deviceTypeUpper.includes("MOTION") || deviceTypeUpper.includes("PIR")) {
         if (typeof parsed.motion === "number") {
           return (
@@ -219,19 +189,14 @@ export default function SensorDataPage() {
           );
         }
       }
-
-      // Fallback: Display all sensor values nicely formatted
       const entries = Object.entries(parsed).filter(([key]) => key !== "timestamp");
       if (entries.length > 0) {
         return (
           <div className="space-y-2">
             {entries.map(([key, val]) => {
-              // Format key name
               const label = key
                 .replace(/_/g, " ")
                 .replace(/\b\w/g, (l) => l.toUpperCase());
-              
-              // Format value with unit
               let displayValue = String(val);
               let unit = "";
               
@@ -263,15 +228,12 @@ export default function SensorDataPage() {
           </div>
         );
       }
-
-      // Last fallback: formatted JSON
       return (
         <pre className="text-xs bg-white rounded p-2 border overflow-x-auto whitespace-pre-wrap">
           {JSON.stringify(parsed, null, 2)}
         </pre>
       );
     } catch {
-      // Not JSON, display as-is
       return (
         <pre className="text-xs bg-white rounded p-2 border overflow-x-auto whitespace-pre-wrap">
           {value}
@@ -280,37 +242,27 @@ export default function SensorDataPage() {
     }
   };
 
-  // Use Firebase real-time data only (no API fallback)
   const firebaseSensorData = selectedDevice && firebaseTelemetryData 
     ? convertFirebaseDataToSensorData(firebaseTelemetryData, selectedDevice) 
     : null;
   const displayLatestData = firebaseSensorData;
-
-  // Additional loading states (isLoading and isLoadingLatest already declared above)
   const [isLoadingChart, setIsLoadingChart] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreData, setHasMoreData] = useState(true);
-
-  // UI states
   const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingSensorData, setEditingSensorData] = useState<any | null>(null);
 
-  // Function definitions (must be before useEffect)
   const fetchDevices = async () => {
     try {
       setIsLoading(true);
       setError(null);
       console.log("[SensorDataPage] Fetching devices for user:", user?.id);
-
-      // Fetch homes first
       let userHomes: Home[] = [];
       if (user?.id) {
         userHomes = await apiService.getMyHomes();
       }
       setHomes(userHomes);
-
-      // Fetch all devices and rooms from all homes
       const allDevices: Device[] = [];
       const allRooms: Room[] = [];
       for (const home of userHomes) {
@@ -339,8 +291,6 @@ export default function SensorDataPage() {
       setRooms(allRooms);
       console.log("[SensorDataPage] Total devices:", allDevices.length);
       console.log("[SensorDataPage] Total rooms:", allRooms.length);
-
-      // Log rooms with NodeIdentifier for debugging
       const roomsWithNodeId = allRooms.filter(r => r.nodeIdentifier);
       console.log("[SensorDataPage] Rooms with NodeIdentifier:", roomsWithNodeId.length, roomsWithNodeId);
     } catch (err: any) {
@@ -352,8 +302,6 @@ export default function SensorDataPage() {
       setIsLoading(false);
     }
   };
-
-  // Removed: fetchLatestSensorData - No longer using API for latest data, only Firebase realtime
 
   const fetchSensorData = useCallback(async (loadMore = false) => {
     try {
@@ -391,8 +339,6 @@ export default function SensorDataPage() {
           "records"
         );
         console.log("[SensorDataPage] Sample record:", data?.[0]);
-
-        // Normalize data to handle both PascalCase and camelCase
         const normalizedData = Array.isArray(data)
           ? data.map((item: any) => ({
               Id: Number(item?.Id ?? item?.id ?? 0),
@@ -405,7 +351,6 @@ export default function SensorDataPage() {
         if (loadMore) {
           setSensorData(prev => [...prev, ...normalizedData]);
           setPage(prev => prev + 1);
-          // Check if we got less data than requested (end of data)
           setHasMoreData(normalizedData.length === pageSize);
         } else {
           setSensorData(normalizedData);
@@ -428,7 +373,6 @@ export default function SensorDataPage() {
     }
   }, [selectedDevice, dateRange, page, pageSize, toUTC]);
 
-  // useEffect hooks (must be after function definitions)
   useEffect(() => {
     if (isServiceLoading) return;
     if (!canUseService) {
@@ -441,7 +385,6 @@ export default function SensorDataPage() {
   useEffect(() => {
     if ((selectedDevice || selectedDevices.length > 0) && canUseService) {
       fetchSensorData();
-      // Removed: fetchLatestSensorData - Only using Firebase realtime now
     } else {
       setSensorData([]);
       setLatestData(null);
@@ -452,23 +395,17 @@ export default function SensorDataPage() {
     try {
       setError(null);
       console.log("[SensorDataPage] Creating sensor data with form:", sensorDataForm);
-
-      // Validate DeviceId
       if (!sensorDataForm.deviceId || isNaN(Number(sensorDataForm.deviceId))) {
         throw new Error("Device ID is required and must be a number");
       }
-
-      // Validate Value is string
       if (!sensorDataForm.value || typeof sensorDataForm.value !== "string") {
         throw new Error("Value is required and must be a string");
       }
-
-      // Build payload with timezone-aware timestamp conversion
       const payload: CreateSensorDataRequest = {
         DeviceId: Number(sensorDataForm.deviceId),
         Value: sensorDataForm.value,
         TimeStamp: sensorDataForm.timeStamp
-          ? toUTC(sensorDataForm.timeStamp) // Convert local time to UTC
+          ? toUTC(sensorDataForm.timeStamp)
           : undefined,
       };
       console.log("[SensorDataPage] Sensor data payload:", payload);
@@ -491,7 +428,6 @@ export default function SensorDataPage() {
     }
   };
 
-  // Export functions
   const exportToCSV = () => {
     if (!sensorData.length) return;
 
@@ -532,7 +468,6 @@ export default function SensorDataPage() {
     document.body.removeChild(link);
   };
 
-  // Advanced filtering functions
   const applyTimeRangePreset = (preset: string) => {
     const now = new Date();
     let from = "";
@@ -559,7 +494,6 @@ export default function SensorDataPage() {
         from = fromUTC(startOfMonth.toISOString());
         break;
       case "custom":
-        // Keep existing custom range
         return;
       default:
         return;
@@ -598,17 +532,13 @@ export default function SensorDataPage() {
     setPage(1);
   };
 
-  // Get filtered devices based on selected homes
   const getFilteredDevices = () => {
     if (selectedHomes.length === 0) return devices;
     return devices.filter(device => {
-      // Find which home this device belongs to
       for (const home of homes) {
         if (selectedHomes.includes(home.id)) {
           try {
             const homeRooms = apiService.getRoomsByHome(home.id);
-            // This is async, for now just return all devices
-            // In a real implementation, you'd need to cache this data
             return true;
           } catch {
             continue;
@@ -625,8 +555,6 @@ export default function SensorDataPage() {
       console.log("[SensorDataPage] Updating sensor data with form:", sensorDataForm);
 
       if (!editingSensorData) return;
-
-      // Validate value is JSON
       let valueString = sensorDataForm.value;
       try {
         if (typeof valueString !== "string") valueString = String(valueString);
@@ -634,9 +562,6 @@ export default function SensorDataPage() {
       } catch {
         throw new Error("Value must be valid JSON string");
       }
-
-      // Note: Backend might not support update for sensor data
-      // This is a placeholder implementation
       console.log("[SensorDataPage] Update not fully supported by backend");
       setError("Update functionality may not be fully supported by the backend");
       setEditingSensorData(null);
@@ -654,9 +579,6 @@ export default function SensorDataPage() {
     try {
       setError(null);
       console.log("[SensorDataPage] Deleting sensor data:", id);
-
-      // Note: Backend might not support DELETE for sensor data
-      // This is a placeholder implementation
       setSensorData(sensorData.filter((item) => item.Id !== id));
       console.log("[SensorDataPage] Sensor data deleted successfully");
     } catch (err: any) {
@@ -667,7 +589,6 @@ export default function SensorDataPage() {
     }
   };
 
-  // Helper to normalize API response (handle both PascalCase and camelCase)
   const normalizeSensorData = (item: any) => {
     return {
       id: item?.id ?? item?.Id ?? "",
@@ -688,13 +609,11 @@ export default function SensorDataPage() {
     }
     try {
       const parsed = JSON.parse(value);
-      // If parsed is empty object, show a message
       if (typeof parsed === "object" && parsed !== null && Object.keys(parsed).length === 0) {
         return { warning: "Empty JSON object" };
       }
       return parsed;
     } catch (e) {
-      // If not valid JSON, return as raw value
       return { raw: value, error: "Invalid JSON format" };
     }
   };
@@ -1239,7 +1158,6 @@ function CreateSensorDataForm({
     timeStamp: "",
   });
 
-  // Set timestamp on client mount to avoid hydration mismatch
   useEffect(() => {
     setFormData(prev => ({
       ...prev,
@@ -1260,7 +1178,6 @@ function CreateSensorDataForm({
 
   const [jsonError, setJsonError] = useState<string | undefined>();
   const validateJson = (_value: string) => {
-    // Accept any string for Value in new API; keep placeholder validator
     setJsonError(undefined);
   };
 
@@ -1392,7 +1309,6 @@ function SensorMiniChart({
   parseValue: (v: string) => any;
   extractNumeric: (parsed: any) => number | null;
 }) {
-  // Lấy tối đa 30 bản ghi gần nhất và chuyển thành points số
   const recent = data
     .slice(-30)
     .map((raw) => {
@@ -1447,7 +1363,6 @@ function EditSensorDataForm({
 }) {
   const { fromUTC, userTimezone } = useTimezone();
 
-  // Normalize sensor data first
   const normalizedData = {
     id: sensorData?.id ?? sensorData?.Id ?? "",
     deviceId: sensorData?.deviceId ?? sensorData?.DeviceId ?? sensorData?.device_id ?? "",
@@ -1455,15 +1370,13 @@ function EditSensorDataForm({
     timeStamp: sensorData?.timeStamp ?? sensorData?.TimeStamp ?? sensorData?.timestamp ?? sensorData?.Timestamp ?? "",
   };
 
-  // Try to format JSON for display
   let formattedValue = normalizedData.value || "";
   try {
     if (formattedValue) {
-      formattedValue = JSON.stringify(JSON.parse(formattedValue), null, 2);
+        formattedValue = JSON.stringify(JSON.parse(formattedValue), null, 2);
+      }
+    } catch {
     }
-  } catch {
-    // Keep original value if parsing fails
-  }
 
   const [formData, setFormData] = useState({
     deviceId: String(normalizedData.deviceId || ""),
@@ -1473,7 +1386,6 @@ function EditSensorDataForm({
       : "",
   });
 
-  // Set default timestamp on client mount if not provided
   useEffect(() => {
     if (!formData.timeStamp) {
       setFormData(prev => ({
